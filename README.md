@@ -1,5 +1,7 @@
 # doorking-esp32
 
+[![build](https://github.com/grantmd/doorking-esp32/actions/workflows/build.yml/badge.svg)](https://github.com/grantmd/doorking-esp32/actions/workflows/build.yml)
+
 An ESP32-C3 bridge for a **DoorKing 4602-010** slide-gate controller. The ESP32
 mimics a wired button press to open and close the gate, reads the
 controller's built-in "fully open" dry relay for state, and exposes everything
