@@ -17,3 +17,11 @@ CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 # extra heap today and enabling PSRAM grows code size and startup time.
 # Turn it on (CONFIG_ESP32C5_SPIRAM_SUPPORT=y + related options) if a
 # future feature needs it.
+
+# Disable the 802.15.4 (Thread / Zigbee / Matter radio) stack. The C5
+# has 802.15.4 hardware and ESP-IDF enables its driver by default for
+# chips that do, but we don't use it — our radio stack is WiFi-only.
+# Saves enough app-partition space to matter; the C5 build is already
+# the largest of our three targets and has the least headroom under
+# the 1 MB CONFIG_PARTITION_TABLE_TWO_OTA app slots.
+CONFIG_IEEE802154_ENABLED=n
