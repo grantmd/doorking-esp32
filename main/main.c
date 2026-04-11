@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "gate_sm.h"
+#include "reset_button.h"
 #include "wifi.h"
 
 static const char *TAG = "doorking";
@@ -60,6 +61,7 @@ void app_main(void)
     config_log(&cfg);
 
     wifi_start(&cfg);
+    reset_button_start();
 
     // Feed the persisted gate timings straight into the state machine.
     gate_sm_t sm;

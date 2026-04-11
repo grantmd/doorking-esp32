@@ -21,11 +21,19 @@ CFLAGS=(
     -I"${REPO_ROOT}/main"
 )
 
-echo "Building gate_sm host tests..."
-cc "${CFLAGS[@]}" \
-    "${REPO_ROOT}/test/test_gate_sm.c" \
-    "${REPO_ROOT}/main/gate_sm.c" \
-    -o "${BUILD_DIR}/test_gate_sm"
+build_and_run() {
+    local name=$1
+    shift
+    echo "Building ${name}..."
+    cc "${CFLAGS[@]}" "$@" -o "${BUILD_DIR}/${name}"
+    echo "Running ${name}..."
+    "${BUILD_DIR}/${name}"
+}
 
-echo "Running gate_sm host tests..."
-"${BUILD_DIR}/test_gate_sm"
+build_and_run test_gate_sm \
+    "${REPO_ROOT}/test/test_gate_sm.c" \
+    "${REPO_ROOT}/main/gate_sm.c"
+
+build_and_run test_reset_btn_sm \
+    "${REPO_ROOT}/test/test_reset_btn_sm.c" \
+    "${REPO_ROOT}/main/reset_btn_sm.c"

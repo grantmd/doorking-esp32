@@ -113,6 +113,23 @@ esp_err_t config_save(const doorking_config_t *cfg)
     return ESP_OK;
 }
 
+esp_err_t config_clear_wifi(void)
+{
+    doorking_config_t cfg;
+    esp_err_t err = config_load(&cfg);
+    if (err != ESP_OK) {
+        return err;
+    }
+    cfg.wifi_ssid[0]  = '\0';
+    cfg.wifi_psk[0]   = '\0';
+    cfg.auth_token[0] = '\0';
+    err = config_save(&cfg);
+    if (err == ESP_OK) {
+        ESP_LOGW(TAG, "wifi credentials and auth token cleared");
+    }
+    return err;
+}
+
 bool config_has_wifi(const doorking_config_t *cfg)
 {
     return cfg->wifi_ssid[0] != '\0';

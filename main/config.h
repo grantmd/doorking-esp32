@@ -61,6 +61,11 @@ esp_err_t config_load(doorking_config_t *cfg);
 // Persist the whole cfg struct to NVS in one transaction.
 esp_err_t config_save(const doorking_config_t *cfg);
 
+// Zero out wifi_ssid, wifi_psk, and auth_token in NVS so the next boot
+// falls back to AP provisioning mode. Gate timings and hostname are
+// preserved. Used by the reset-button path.
+esp_err_t config_clear_wifi(void);
+
 // True if wifi_ssid is non-empty (i.e. station-mode provisioning has been
 // completed at least once).
 bool config_has_wifi(const doorking_config_t *cfg);

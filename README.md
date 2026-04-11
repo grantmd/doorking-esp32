@@ -22,6 +22,7 @@ in the user's Claude config — copy if you want it committed in-repo.
 | Gate state machine (pure C, host-testable) | done | `main/gate_sm.{c,h}`, `test/test_gate_sm.c` |
 | NVS-backed config (WiFi, token, timings) | done | `main/config.{c,h}` |
 | WiFi STA + AP-mode provisioning fallback | done | `main/wifi.{c,h}` |
+| Factory reset via BOOT-button hold | done | `main/reset_btn_sm.{c,h}`, `main/reset_button.{c,h}`, `test/test_reset_btn_sm.c` |
 | HTTP API (`/status`, `/open`, `/close`, bearer auth) | pending | — |
 | Embedded web UI | pending | — |
 | GPIO wiring (relay module, status input) | pending | — |
@@ -130,14 +131,29 @@ To provision (or re-provision) a device:
    ```
 
 To re-provision later (e.g. new WiFi password, lost token, moved house),
-easiest path today is to erase flash and re-flash:
+the simplest path is to press and hold the **BOOT** button on the XIAO
+for 5 seconds while the device is running. This clears `wifi_ssid`,
+`wifi_psk`, and `auth_token` from NVS and reboots into AP provisioning
+mode. Gate timings and hostname are preserved. Serial logs look like:
+
+```
+W (xxx) reset_btn: button pressed — keep holding for 5 seconds to erase wifi creds
+W (xxx) reset_btn: hold threshold crossed — clearing wifi credentials and rebooting
+W (xxx) config:    wifi credentials and auth token cleared
+```
+
+> GPIO9 on the XIAO ESP32-C3 doubles as both the BOOT button and the
+> bootloader strapping pin. Holding BOOT *during* power-on drops the
+> chip into the ROM download mode instead of running our firmware, so
+> the reset logic only runs once the firmware is already up. This is
+> the intended UX — press and hold while the device is running.
+
+If all else fails, erase flash over USB and re-flash:
 
 ```
 idf.py -p /dev/cu.usbmodem* erase-flash
 idf.py -p /dev/cu.usbmodem* flash monitor
 ```
-
-A proper "factory reset" button handler is planned but not yet wired up.
 
 ## Repo layout
 
@@ -150,10 +166,13 @@ A proper "factory reset" button handler is planned but not yet wired up.
 │   ├── main.c              # app_main — boots modules in order
 │   ├── gate_sm.{c,h}       # pure-C gate state machine (no ESP-IDF deps)
 │   ├── config.{c,h}        # NVS-backed persistent settings
-│   └── wifi.{c,h}          # STA + AP-provisioning mode + provisioning HTTP server
+│   ├── wifi.{c,h}          # STA + AP-provisioning mode + provisioning HTTP server
+│   ├── reset_btn_sm.{c,h}  # pure-C debounce + hold-threshold state machine
+│   └── reset_button.{c,h}  # FreeRTOS task: poll GPIO9, clear wifi on 5 s hold
 └── test/
     ├── run_tests.sh        # host-side test runner, uses system cc
-    └── test_gate_sm.c      # 19 gate_sm scenarios
+    ├── test_gate_sm.c      # 19 gate_sm scenarios
+    └── test_reset_btn_sm.c # 7 debounce / hold-threshold scenarios
 ```
 
 ## References

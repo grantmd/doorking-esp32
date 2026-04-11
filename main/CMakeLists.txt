@@ -4,6 +4,8 @@ idf_component_register(
         "gate_sm.c"
         "config.c"
         "wifi.c"
+        "reset_btn_sm.c"
+        "reset_button.c"
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES
@@ -13,4 +15,5 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
+        esp_driver_gpio
 )
