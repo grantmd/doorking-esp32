@@ -146,8 +146,20 @@ void config_log(const doorking_config_t *cfg)
     ESP_LOGI(TAG, "config: wifi_ssid=%s psk=%s",
              config_has_wifi(cfg) ? cfg->wifi_ssid : "(unset)",
              config_has_wifi(cfg) ? "<set>" : "(unset)");
-    ESP_LOGI(TAG, "config: auth_token=%s",
-             config_has_auth_token(cfg) ? "<set>" : "(unset)");
+
+    // The bearer token is logged in full at every boot by design. Seeing it
+    // is gated on physical USB access to the XIAO, which is the same trust
+    // level as physical access to the gate controller itself, so logging
+    // here is no worse than the "erase flash + re-provision" recovery path.
+    // It is also the primary delivery channel if the provisioning page
+    // fails to render on the user's phone (iOS captive-portal view is
+    // fragile about this). Tighten this if the threat model changes.
+    if (config_has_auth_token(cfg)) {
+        ESP_LOGI(TAG, "config: auth_token=%s", cfg->auth_token);
+    } else {
+        ESP_LOGI(TAG, "config: auth_token=(unset)");
+    }
+
     ESP_LOGI(TAG, "config: pulse_ms=%u min_cmd_spacing_ms=%u travel_timeout_ms=%u",
              (unsigned)cfg->pulse_ms,
              (unsigned)cfg->min_cmd_spacing_ms,

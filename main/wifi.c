@@ -177,7 +177,11 @@ static void generate_auth_token(char *dst)
 static void reboot_task(void *arg)
 {
     (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    // 3 seconds: long enough for the httpd response to flush to the phone
+    // over WiFi and for the user to read the token on the success page
+    // before the AP disappears. Bumped from 2 s after an iOS captive-
+    // portal view failed to render the response cleanly in practice.
+    vTaskDelay(pdMS_TO_TICKS(3000));
     ESP_LOGI(TAG, "rebooting after provisioning");
     esp_restart();
 }
@@ -226,6 +230,13 @@ static esp_err_t handle_provision(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "nvs save failed");
         return ESP_FAIL;
     }
+
+    // Also log the token prominently to serial as a backup delivery path.
+    // iOS captive-portal views have a habit of failing to render the
+    // success response cleanly when the underlying AP is about to go
+    // away, so the HTTP page alone is not reliable enough to deliver a
+    // one-shot secret.
+    ESP_LOGW(TAG, ">>> new bearer token (copy to Homebridge): %s", cfg.auth_token);
 
     char page[1024];
     snprintf(page, sizeof(page),
