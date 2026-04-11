@@ -8,12 +8,15 @@
 #include <stdio.h>
 
 #include "esp_chip_info.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs_flash.h"
 #include "sdkconfig.h"
 
+#include "config.h"
 #include "gate_sm.h"
 
 static const char *TAG = "doorking";
@@ -21,6 +24,20 @@ static const char *TAG = "doorking";
 static uint64_t now_ms(void)
 {
     return (uint64_t)(esp_timer_get_time() / 1000);
+}
+
+// Bring up NVS flash. If the partition is new or the layout has changed
+// (e.g. after an OTA that added new keys), erase and re-init so boot
+// always succeeds. This matches the pattern in every ESP-IDF example.
+static void init_nvs(void)
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "nvs needs erase (%s), erasing", esp_err_to_name(err));
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
 }
 
 void app_main(void)
@@ -35,15 +52,19 @@ void app_main(void)
              chip.cores,
              CONFIG_ESPTOOLPY_FLASHSIZE_4MB ? 4 : 0);
 
-    // Bring up the gate state machine with defaults. Hardware wiring and
-    // real status reads land in a later commit; for now this just proves
-    // the module links and initialises on-target.
+    init_nvs();
+
+    doorking_config_t cfg;
+    ESP_ERROR_CHECK(config_load(&cfg));
+    config_log(&cfg);
+
+    // Feed the persisted gate timings straight into the state machine.
     gate_sm_t sm;
-    const gate_sm_config_t cfg = {
-        .travel_timeout_ms  = 30000,
-        .min_cmd_spacing_ms = 2000,
+    const gate_sm_config_t sm_cfg = {
+        .travel_timeout_ms  = cfg.travel_timeout_ms,
+        .min_cmd_spacing_ms = cfg.min_cmd_spacing_ms,
     };
-    gate_sm_init(&sm, &cfg);
+    gate_sm_init(&sm, &sm_cfg);
     ESP_LOGI(TAG, "gate_sm initial state: %s", gate_sm_state_name(gate_sm_state(&sm)));
 
     uint32_t tick = 0;
