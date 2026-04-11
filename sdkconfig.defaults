@@ -1,0 +1,18 @@
+# Target and flash
+CONFIG_IDF_TARGET="esp32c3"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# XIAO ESP32-C3 exposes USB Serial/JTAG natively over its USB-C port.
+# Route the console there so one cable does both power and logging.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Two OTA app slots + factory + NVS so we can do safe OTA updates later.
+CONFIG_PARTITION_TABLE_TWO_OTA=y
+
+# 1 kHz FreeRTOS tick gives us millisecond-granularity timers for the gate
+# state machine (pulse width, travel timeouts, command throttling).
+CONFIG_FREERTOS_HZ=1000
+
+# Compiler: treat warnings as errors so bugs surface at build time.
+CONFIG_COMPILER_WARN_WRITE_STRINGS=y

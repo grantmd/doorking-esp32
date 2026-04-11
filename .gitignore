@@ -1,0 +1,16 @@
+# ESP-IDF build output
+build/
+managed_components/
+dependencies.lock
+
+# Per-user sdkconfig (sdkconfig.defaults is committed; sdkconfig is generated)
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
