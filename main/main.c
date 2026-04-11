@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "gate_sm.h"
+#include "wifi.h"
 
 static const char *TAG = "doorking";
 
@@ -57,6 +58,8 @@ void app_main(void)
     doorking_config_t cfg;
     ESP_ERROR_CHECK(config_load(&cfg));
     config_log(&cfg);
+
+    wifi_start(&cfg);
 
     // Feed the persisted gate timings straight into the state machine.
     gate_sm_t sm;
