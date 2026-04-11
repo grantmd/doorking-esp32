@@ -29,7 +29,7 @@ jobs:
       - name: Build firmware for esp32c3
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.3
+          esp_idf_version: v5.5
           target: esp32c3
           path: '.'
           # Build, then merge the partitions into a single image that can be
