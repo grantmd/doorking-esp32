@@ -1,0 +1,18 @@
+# Target-specific defaults for the SparkFun Thing Plus ESP32 WROOM (USB-C).
+# Applied automatically when CONFIG_IDF_TARGET=esp32. Common settings
+# shared with all other targets live in sdkconfig.defaults.
+
+# The Thing Plus WROOM ships with 16 MB of onboard flash. Note that our
+# CONFIG_PARTITION_TABLE_TWO_OTA layout (inherited from the common
+# defaults) only uses the first ~3 MB (NVS + two 1 MB app slots + misc);
+# the rest of the 16 MB is currently unused. If the app binary ever grows
+# past 1 MB we'll switch to CONFIG_PARTITION_TABLE_CUSTOM with a bigger
+# layout — for now the common-across-targets 1 MB slots are the cheaper
+# call.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+
+# Console routes to UART0 (the ESP32 default) which the onboard CH340C
+# USB-UART bridge exposes as the USB-C serial device. UART0 is already
+# the ESP32's default console destination so no Kconfig override is
+# needed; this comment records the intent for future readers.

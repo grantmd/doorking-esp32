@@ -41,6 +41,28 @@
     // resets and not "hold at power-on" resets.
     #define RESET_BUTTON_GPIO   9
 
+#elif CONFIG_IDF_TARGET_ESP32
+
+    #define BOARD_NAME          "SparkFun Thing Plus ESP32 WROOM (USB-C)"
+
+    // The BOOT button on the Thing Plus, wired to GPIO0. Like GPIO9 on
+    // the C3, GPIO0 is a strapping pin — holding it LOW during power-on
+    // drops the chip into the ROM download mode instead of running our
+    // firmware. The reset-button hold logic therefore only runs after
+    // the firmware is already up.
+    //
+    // GOTCHA specific to this board: the Thing Plus wires GPIO0 so that
+    // pressing the BOOT button also momentarily disables the Qwiic
+    // connector's power rail. That means our 5-second factory-reset
+    // hold will drop Qwiic power for the duration of the hold, which in
+    // turn briefly un-powers any Qwiic I2C devices we're driving (like
+    // the Qwiic Relays). This is acceptable because the user is
+    // deliberately resetting the device and we reboot immediately
+    // after; relay state is re-established from scratch on the next
+    // boot. Do not use GPIO0 as a runtime-polled input for anything
+    // other than the reset button.
+    #define RESET_BUTTON_GPIO   0
+
 #else
 
     #error "Unsupported IDF target — add a block in main/board.h"
