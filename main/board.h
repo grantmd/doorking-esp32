@@ -63,6 +63,19 @@
     // other than the reset button.
     #define RESET_BUTTON_GPIO   0
 
+#elif CONFIG_IDF_TARGET_ESP32C5
+
+    #define BOARD_NAME          "SparkFun Thing Plus ESP32-C5"
+
+    // The BOOT button on the Thing Plus C5, wired to GPIO28. Unlike the
+    // C3 (GPIO9) and earlier ESP32 (GPIO0), the ESP32-C5 uses GPIO27 and
+    // GPIO28 as its boot-mode strapping pins — see the SparkFun Thing
+    // Plus C5 hookup guide / datasheet. Same runtime-press-only caveat
+    // as the other targets: holding BOOT during power-on enters the ROM
+    // download mode, so our 5-second factory-reset hold only runs
+    // after the firmware is already up.
+    #define RESET_BUTTON_GPIO   28
+
 #else
 
     #error "Unsupported IDF target — add a block in main/board.h"

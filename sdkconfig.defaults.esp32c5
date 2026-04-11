@@ -1,0 +1,19 @@
+# Target-specific defaults for the SparkFun Thing Plus ESP32-C5.
+# Applied automatically when CONFIG_IDF_TARGET=esp32c5. Common settings
+# shared with all other targets live in sdkconfig.defaults.
+
+# The Thing Plus C5 ships with 8 MB of onboard flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# The ESP32-C5 has a native USB Serial/JTAG peripheral, and the Thing Plus
+# routes it directly to the USB-C connector (no external USB-UART bridge).
+# Route the firmware console there so one USB-C cable does power, logging,
+# and flashing — same UX as the XIAO ESP32-C3.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Note: the board also has 8 MB of PSRAM wired to the ESP32-C5-WROOM-1
+# module, but we don't enable it here — nothing in the firmware needs
+# extra heap today and enabling PSRAM grows code size and startup time.
+# Turn it on (CONFIG_ESP32C5_SPIRAM_SUPPORT=y + related options) if a
+# future feature needs it.

@@ -32,6 +32,11 @@ jobs:
             flash_size: 16MB
             flash_freq: 40m
             bootloader_offset: "0x1000"
+          # SparkFun Thing Plus ESP32-C5: 8 MB flash, 80 MHz, bootloader at 0x2000.
+          - target: esp32c5
+            flash_size: 8MB
+            flash_freq: 80m
+            bootloader_offset: "0x2000"
 
     steps:
       - name: Checkout
@@ -94,6 +99,7 @@ jobs:
           files: |
             artifacts/firmware-esp32c3/doorking-esp32c3-merged.bin
             artifacts/firmware-esp32/doorking-esp32-merged.bin
+            artifacts/firmware-esp32c5/doorking-esp32c5-merged.bin
           body: |
             ## Flashing
 
@@ -114,9 +120,16 @@ jobs:
               write_flash 0x1000 doorking-esp32-merged.bin
             ```
 
-            Note the different flash offsets: the ESP32-C3 flashes at `0x0`
-            while the original ESP32 flashes at `0x1000` — this is a chip
-            boot ROM requirement, not a project choice.
+            ### SparkFun Thing Plus ESP32-C5 → `doorking-esp32c5-merged.bin`
+
+            ```
+            python -m esptool --chip esp32c5 --port /dev/cu.usbmodem* \
+              write_flash 0x2000 doorking-esp32c5-merged.bin
+            ```
+
+            Note the different flash offsets: the ESP32-C3 flashes at `0x0`,
+            the original ESP32 at `0x1000`, and the ESP32-C5 at `0x2000`.
+            These are chip boot ROM requirements, not project choices.
 
             On a fresh device the firmware comes up in AP mode broadcasting
             an open `doorking-setup` SSID. Join it and visit
