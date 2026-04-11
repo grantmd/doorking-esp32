@@ -1,8 +1,14 @@
-// doorking - ESP32-C3 bridge for DoorKing 4602-010 gate controller.
+// doorking — ESP-IDF firmware bridging a DoorKing 4602-010 slide-gate
+// controller to HomeKit via Homebridge over a bearer-authenticated HTTP API.
 //
-// Phase 1 target: prove the toolchain + XIAO ESP32-C3 are wired up correctly by
-// booting, logging over USB Serial/JTAG, and heartbeating once per second. Real
-// WiFi / HTTP / gate logic lands in later commits once this runs.
+// Multi-target: the same firmware runs on any supported reference board
+// (Seeed XIAO ESP32-C3, SparkFun Thing Plus ESP32 WROOM, SparkFun Thing
+// Plus ESP32-C5) by selecting the ESP-IDF target. Board-specific pin
+// assignments and the board name live in main/board.h; target-specific
+// Kconfig defaults live in sdkconfig.defaults.<target>.
+//
+// This file just boots the modules in order: NVS → config → WiFi (STA
+// or AP provisioning) → reset-button watcher → gate state machine.
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -16,6 +22,7 @@
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
+#include "board.h"
 #include "config.h"
 #include "gate_sm.h"
 #include "reset_button.h"
@@ -48,11 +55,11 @@ void app_main(void)
     esp_chip_info(&chip);
 
     ESP_LOGI(TAG, "doorking firmware booting");
-    ESP_LOGI(TAG, "chip: %s rev %d.%d, %d core(s), flash %dMB",
+    ESP_LOGI(TAG, "board: %s", BOARD_NAME);
+    ESP_LOGI(TAG, "chip:  %s rev %d.%d, %d core(s)",
              CONFIG_IDF_TARGET,
              chip.revision / 100, chip.revision % 100,
-             chip.cores,
-             CONFIG_ESPTOOLPY_FLASHSIZE_4MB ? 4 : 0);
+             chip.cores);
 
     init_nvs();
 

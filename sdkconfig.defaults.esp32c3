@@ -1,0 +1,12 @@
+# Target-specific defaults for the Seeed Studio XIAO ESP32-C3.
+# Applied automatically when CONFIG_IDF_TARGET=esp32c3. Common settings
+# shared with all other targets live in sdkconfig.defaults.
+
+# XIAO ESP32-C3 ships with 4 MB of onboard flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# The XIAO exposes USB Serial/JTAG natively over its USB-C port. Route
+# the firmware console there so one USB-C cable does power, logging, and
+# flashing without any external USB-UART adapter.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

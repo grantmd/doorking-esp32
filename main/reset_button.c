@@ -7,15 +7,15 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "board.h"
 #include "config.h"
 #include "reset_btn_sm.h"
 
 static const char *TAG = "reset_btn";
 
-// XIAO ESP32-C3 BOOT button — shared with GPIO9, the chip's strapping pin
-// for entering the ROM download mode. After a normal boot (GPIO9 high at
-// reset), we can read it as an ordinary active-low input.
-#define RESET_BUTTON_GPIO     GPIO_NUM_9
+// Which pin the BOOT button lives on is board-specific — see board.h.
+// Every supported target defines RESET_BUTTON_GPIO. It is always an
+// active-low input with a weak pull-up.
 
 // Poll every 50 ms. That's fast enough for human perception of a "press"
 // and slow enough that mechanical bounce has fully settled between samples.
