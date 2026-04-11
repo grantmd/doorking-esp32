@@ -1,8 +1,10 @@
 name: build
 
-# Build firmware + run host tests on every push to main and every PR. On
-# tag push matching v*, additionally publish a GitHub Release with the
-# partition binaries and a merged one-shot flash image.
+# Build firmware for every supported target on every push to main and every
+# PR. Host-side unit tests run once per target (cheap — they take
+# milliseconds). On tag push matching v*, a separate release job runs after
+# all matrix builds finish and publishes a single GitHub Release with one
+# target-tagged merged image per board.
 
 on:
   push:
@@ -13,11 +15,23 @@ on:
 
 jobs:
   build:
+    name: build-${{ matrix.target }}
     runs-on: ubuntu-latest
 
-    # softprops/action-gh-release needs write access to create releases.
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # XIAO ESP32-C3: 4 MB flash, 80 MHz, bootloader at 0x0.
+          - target: esp32c3
+            flash_size: 4MB
+            flash_freq: 80m
+            bootloader_offset: "0x0"
+          # SparkFun Thing Plus ESP32 WROOM: 16 MB flash, 40 MHz, bootloader at 0x1000.
+          - target: esp32
+            flash_size: 16MB
+            flash_freq: 40m
+            bootloader_offset: "0x1000"
 
     steps:
       - name: Checkout
@@ -26,70 +40,87 @@ jobs:
       - name: Run host-side unit tests
         run: ./test/run_tests.sh
 
-      - name: Build firmware for esp32c3
+      - name: Build firmware for ${{ matrix.target }}
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.5
-          target: esp32c3
+          target: ${{ matrix.target }}
           path: '.'
           # Build, then merge the partitions into a single image that can be
-          # flashed at 0x0 in one shot. The flash_mode / flash_freq /
-          # flash_size values match what sdkconfig.defaults asks for.
+          # flashed in one shot. The flash_mode / flash_freq / flash_size
+          # values are target-specific and come from the matrix include.
           command: |
             idf.py build
-            python -m esptool --chip esp32c3 merge_bin \
-              -o build/doorking-merged.bin \
-              --flash_mode dio --flash_freq 80m --flash_size 4MB \
-              0x0     build/bootloader/bootloader.bin \
+            python -m esptool --chip ${{ matrix.target }} merge_bin \
+              -o build/doorking-${{ matrix.target }}-merged.bin \
+              --flash_mode dio --flash_freq ${{ matrix.flash_freq }} --flash_size ${{ matrix.flash_size }} \
+              ${{ matrix.bootloader_offset }} build/bootloader/bootloader.bin \
               0x8000  build/partition_table/partition-table.bin \
               0xd000  build/ota_data_initial.bin \
               0x10000 build/doorking.bin
 
-      - name: Upload firmware artifacts
+      - name: Upload firmware artifacts for ${{ matrix.target }}
         uses: actions/upload-artifact@v7
         with:
-          name: firmware-esp32c3
+          name: firmware-${{ matrix.target }}
           if-no-files-found: error
           path: |
             build/doorking.bin
             build/doorking.elf
-            build/doorking-merged.bin
+            build/doorking-${{ matrix.target }}-merged.bin
             build/bootloader/bootloader.bin
             build/partition_table/partition-table.bin
             build/ota_data_initial.bin
 
+  release:
+    name: release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
       - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            build/doorking.bin
-            build/doorking-merged.bin
-            build/bootloader/bootloader.bin
-            build/partition_table/partition-table.bin
-            build/ota_data_initial.bin
+            artifacts/firmware-esp32c3/doorking-esp32c3-merged.bin
+            artifacts/firmware-esp32/doorking-esp32-merged.bin
           body: |
             ## Flashing
 
-            **One-step flash** (recommended — uses the merged image):
+            Each supported target ships a pre-merged single-image binary.
+            Pick the one for your board and flash with `esptool`.
+
+            ### Seeed Studio XIAO ESP32-C3 → `doorking-esp32c3-merged.bin`
 
             ```
             python -m esptool --chip esp32c3 --port /dev/cu.usbmodem* \
-              write_flash 0x0 doorking-merged.bin
+              write_flash 0x0 doorking-esp32c3-merged.bin
             ```
 
-            **Or flash individual partitions:**
+            ### SparkFun Thing Plus ESP32 WROOM (USB-C) → `doorking-esp32-merged.bin`
 
             ```
-            python -m esptool --chip esp32c3 --port /dev/cu.usbmodem* \
-              write_flash \
-              0x0     bootloader.bin \
-              0x8000  partition-table.bin \
-              0xd000  ota_data_initial.bin \
-              0x10000 doorking.bin
+            python -m esptool --chip esp32 --port /dev/cu.usbserial-* \
+              write_flash 0x1000 doorking-esp32-merged.bin
             ```
 
-            On a fresh device the firmware boots in AP mode — join the open
-            `doorking-setup` network and visit `http://192.168.4.1/` to
-            provision. See the README for details.
+            Note the different flash offsets: the ESP32-C3 flashes at `0x0`
+            while the original ESP32 flashes at `0x1000` — this is a chip
+            boot ROM requirement, not a project choice.
+
+            On a fresh device the firmware comes up in AP mode broadcasting
+            an open `doorking-setup` SSID. Join it and visit
+            `http://192.168.4.1/` to provision the WiFi credentials and
+            obtain a bearer token. The token is also logged to the serial
+            console as a backup delivery channel. See the README for full
+            provisioning details.
