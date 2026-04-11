@@ -16,3 +16,11 @@ CONFIG_FREERTOS_HZ=1000
 
 # Compiler: treat warnings as errors so bugs surface at build time.
 CONFIG_COMPILER_WARN_WRITE_STRINGS=y
+
+# Bump the esp_http_server request-header buffer from the 512 B default.
+# Desktop browsers (Chrome/Safari/Firefox) routinely send 600+ bytes of
+# headers on a plain form POST — User-Agent, Accept-*, Sec-*, Cookie,
+# Upgrade-Insecure-Requests, etc. — and overflow the default, returning
+# 431 before the handler ever runs. 2 KB is comfortable headroom.
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
+CONFIG_HTTPD_MAX_URI_LEN=1024
