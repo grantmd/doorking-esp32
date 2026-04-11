@@ -182,6 +182,17 @@ static void reboot_task(void *arg)
     // before the AP disappears. Bumped from 2 s after an iOS captive-
     // portal view failed to render the response cleanly in practice.
     vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // Cleanly close any lingering httpd sockets before we yank WiFi out
+    // from under them. Without this, browsers that keep the connection
+    // open for a favicon probe or keepalive cause "httpd_sock_err: error
+    // in recv : 113 (EHOSTUNREACH)" warnings during shutdown as their
+    // sockets hit the unreachable route mid-teardown. Harmless but noisy.
+    if (s_provision_httpd) {
+        httpd_stop(s_provision_httpd);
+        s_provision_httpd = NULL;
+    }
+
     ESP_LOGI(TAG, "rebooting after provisioning");
     esp_restart();
 }
