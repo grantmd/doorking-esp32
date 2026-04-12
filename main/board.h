@@ -41,6 +41,11 @@
     // resets and not "hold at power-on" resets.
     #define RESET_BUTTON_GPIO   9
 
+    // I²C master bus for the Qwiic Relay modules. The XIAO has no
+    // Qwiic connector — use a Qwiic-to-pigtail adapter wired to D4/D5.
+    #define I2C_MASTER_SDA_GPIO 6   /* XIAO pad D4 */
+    #define I2C_MASTER_SCL_GPIO 7   /* XIAO pad D5 */
+
 #elif CONFIG_IDF_TARGET_ESP32
 
     #define BOARD_NAME          "SparkFun Thing Plus ESP32 WROOM (USB-C)"
@@ -63,6 +68,12 @@
     // other than the reset button.
     #define RESET_BUTTON_GPIO   0
 
+    // I²C master bus — the Thing Plus routes SDA/SCL to GPIO21/GPIO22
+    // and also to the onboard Qwiic connector. The MAX17048 battery
+    // fuel gauge is permanently on this bus at address 0x36.
+    #define I2C_MASTER_SDA_GPIO 21
+    #define I2C_MASTER_SCL_GPIO 22
+
 #elif CONFIG_IDF_TARGET_ESP32C5
 
     #define BOARD_NAME          "SparkFun Thing Plus ESP32-C5"
@@ -75,6 +86,11 @@
     // download mode, so our 5-second factory-reset hold only runs
     // after the firmware is already up.
     #define RESET_BUTTON_GPIO   28
+
+    // I²C master bus — the Thing Plus C5 routes SDA/SCL to GPIO6/GPIO7
+    // and also to the onboard Qwiic connector.
+    #define I2C_MASTER_SDA_GPIO 6
+    #define I2C_MASTER_SCL_GPIO 7
 
 #else
 

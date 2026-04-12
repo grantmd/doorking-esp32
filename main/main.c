@@ -28,6 +28,7 @@
 #include "config.h"
 #include "gate_sm.h"
 #include "http_api.h"
+#include "i2c_bus.h"
 #include "log_buffer.h"
 #include "reset_button.h"
 #include "wifi.h"
@@ -88,6 +89,12 @@ void app_main(void)
 
     wifi_start(&cfg);
     reset_button_start();
+
+    // Bring up the I²C bus and scan for devices. The bus handle will
+    // later be passed to relay_i2c for Qwiic Relay control; for now
+    // the scan just logs what's connected for diagnostic purposes.
+    i2c_master_bus_handle_t i2c_bus = i2c_bus_init_and_scan();
+    (void)i2c_bus;  // unused until relay_i2c.c lands
 
     // Start the main HTTP API and mDNS. Only useful in STA mode (the
     // provisioning server in wifi.c handles AP mode).

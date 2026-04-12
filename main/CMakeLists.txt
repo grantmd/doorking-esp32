@@ -8,6 +8,7 @@ idf_component_register(
         "reset_button.c"
         "log_buffer.c"
         "http_api.c"
+        "i2c_bus.c"
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES
@@ -18,5 +19,6 @@ idf_component_register(
         esp_event
         esp_http_server
         esp_driver_gpio
+        esp_driver_i2c
         mdns
 )
