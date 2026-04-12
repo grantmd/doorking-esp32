@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 
 #include "config.h"
+#include "status_led.h"
 
 static const char *TAG = "wifi";
 
@@ -34,6 +35,7 @@ static void on_wifi_event(void *arg, esp_event_base_t base,
         switch (id) {
         case WIFI_EVENT_STA_START:
             ESP_LOGI(TAG, "sta start, connecting");
+            status_led_set_state(STATUS_LED_WIFI_CONNECTING);
             esp_wifi_connect();
             break;
 
@@ -41,12 +43,14 @@ static void on_wifi_event(void *arg, esp_event_base_t base,
             wifi_event_sta_disconnected_t *d = data;
             ESP_LOGW(TAG, "sta disconnected reason=%d, reconnecting", d->reason);
             s_sta_got_ip = false;
+            status_led_set_state(STATUS_LED_WIFI_LOST);
             esp_wifi_connect();
             break;
         }
 
         case WIFI_EVENT_AP_START:
             ESP_LOGI(TAG, "ap started");
+            status_led_set_state(STATUS_LED_AP_MODE);
             break;
 
         case WIFI_EVENT_AP_STACONNECTED: {
@@ -69,6 +73,7 @@ static void on_wifi_event(void *arg, esp_event_base_t base,
             ip_event_got_ip_t *d = data;
             ESP_LOGI(TAG, "sta got ip " IPSTR, IP2STR(&d->ip_info.ip));
             s_sta_got_ip = true;
+            status_led_set_state(STATUS_LED_WIFI_CONNECTED);
         }
     }
 }

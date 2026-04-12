@@ -31,6 +31,7 @@
 #include "i2c_bus.h"
 #include "log_buffer.h"
 #include "reset_button.h"
+#include "status_led.h"
 #include "wifi.h"
 
 static const char *TAG = "doorking";
@@ -87,6 +88,7 @@ void app_main(void)
     gate_sm_init(&sm, &sm_cfg);
     ESP_LOGI(TAG, "gate_sm initial state: %s", gate_sm_state_name(gate_sm_state(&sm)));
 
+    status_led_init();
     wifi_start(&cfg);
     reset_button_start();
 

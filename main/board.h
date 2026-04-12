@@ -46,6 +46,10 @@
     #define I2C_MASTER_SDA_GPIO 6   /* XIAO pad D4 */
     #define I2C_MASTER_SCL_GPIO 7   /* XIAO pad D5 */
 
+    // No user-controllable LED on the XIAO (only power/charge LEDs).
+    // STATUS_LED_GPIO is deliberately not defined — the status_led
+    // module compiles as no-ops for this target.
+
 #elif CONFIG_IDF_TARGET_ESP32
 
     #define BOARD_NAME          "SparkFun Thing Plus ESP32 WROOM (USB-C)"
@@ -74,6 +78,9 @@
     #define I2C_MASTER_SDA_GPIO 21
     #define I2C_MASTER_SCL_GPIO 22
 
+    // WS2812C (NeoPixel) RGB status LED, active on GPIO2.
+    #define STATUS_LED_GPIO     2
+
 #elif CONFIG_IDF_TARGET_ESP32C5
 
     #define BOARD_NAME          "SparkFun Thing Plus ESP32-C5"
@@ -91,6 +98,10 @@
     // and also to the onboard Qwiic connector.
     #define I2C_MASTER_SDA_GPIO 6
     #define I2C_MASTER_SCL_GPIO 7
+
+    // WS2812 RGB status LED, active on GPIO27 (via the RGB solder
+    // jumper which is closed by default).
+    #define STATUS_LED_GPIO     27
 
 #else
 

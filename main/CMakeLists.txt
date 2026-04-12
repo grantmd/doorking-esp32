@@ -9,6 +9,7 @@ idf_component_register(
         "log_buffer.c"
         "http_api.c"
         "i2c_bus.c"
+        "status_led.c"
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES
