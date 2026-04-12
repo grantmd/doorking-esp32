@@ -133,17 +133,32 @@ alias get_idf='. ~/esp/esp-idf/export.sh'
 
 ## Build and flash
 
-From the repo root with the toolchain activated:
+The repo ships a thin wrapper at `scripts/idf.sh` that sources ESP-IDF's
+`export.sh` internally and forwards all arguments to `idf.py`. Using the
+wrapper means builds work without pre-activating the toolchain in the
+current shell, and it gives automated agents / sandboxes a concrete
+namespaced command prefix (`./scripts/idf.sh *`) to whitelist instead of
+the leading `.` POSIX-source operator. From the repo root:
 
 ```
-idf.py set-target <target>   # esp32c3, esp32, or esp32c5 — once per clone per target
+./scripts/idf.sh set-target <target>   # esp32c3, esp32, or esp32c5 — once per clone per target
+./scripts/idf.sh build
+./scripts/idf.sh -p <serial port> flash monitor
+```
+
+When switching between targets on the same clone, run
+`./scripts/idf.sh fullclean` first so CMake regenerates `sdkconfig` from
+scratch against the new target's `sdkconfig.defaults.<target>`.
+
+If you'd rather activate the toolchain yourself and call `idf.py`
+directly, the canonical pattern still works:
+
+```
+. ~/esp/esp-idf-v5.5/export.sh
+idf.py set-target <target>
 idf.py build
 idf.py -p <serial port> flash monitor
 ```
-
-When switching between targets on the same clone, run `idf.py fullclean`
-first so CMake regenerates `sdkconfig` from scratch against the new
-target's `sdkconfig.defaults.<target>`.
 
 Serial port patterns vary by board:
 
@@ -231,6 +246,8 @@ idf.py -p <serial port> flash monitor
 │   ├── wifi.{c,h}               # STA + AP-provisioning + provisioning HTTP server
 │   ├── reset_btn_sm.{c,h}       # pure-C debounce + hold-threshold state machine
 │   └── reset_button.{c,h}       # FreeRTOS task: poll BOOT pin, clear wifi on hold
+├── scripts/
+│   └── idf.sh                   # thin wrapper: sources export.sh, forwards to idf.py
 ├── test/
 │   ├── run_tests.sh             # host-side test runner, uses system cc
 │   ├── test_gate_sm.c           # 19 gate_sm scenarios
