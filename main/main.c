@@ -20,6 +20,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "mdns.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
@@ -88,10 +89,18 @@ void app_main(void)
     wifi_start(&cfg);
     reset_button_start();
 
-    // Start the main HTTP API. Only useful in STA mode (the provisioning
-    // server in wifi.c handles AP mode).
+    // Start the main HTTP API and mDNS. Only useful in STA mode (the
+    // provisioning server in wifi.c handles AP mode).
     if (config_has_wifi(&cfg)) {
         http_api_start(&cfg, &sm);
+
+        // Advertise as <hostname>.local on the LAN so the user (and
+        // Homebridge) can reach the device without knowing its DHCP IP.
+        ESP_ERROR_CHECK(mdns_init());
+        ESP_ERROR_CHECK(mdns_hostname_set(cfg.hostname));
+        mdns_instance_name_set("DoorKing Gate Bridge");
+        mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+        ESP_LOGI(TAG, "mdns: %s.local", cfg.hostname);
     }
 
     while (1) {
