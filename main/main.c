@@ -7,8 +7,9 @@
 // assignments and the board name live in main/board.h; target-specific
 // Kconfig defaults live in sdkconfig.defaults.<target>.
 //
-// This file just boots the modules in order: NVS → config → WiFi (STA
-// or AP provisioning) → reset-button watcher → gate state machine.
+// This file boots the modules in order: log buffer (first, so boot
+// output is captured) → NVS → config → WiFi (STA or AP provisioning)
+// → reset-button watcher → HTTP API → gate state machine tick loop.
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -25,6 +26,8 @@
 #include "board.h"
 #include "config.h"
 #include "gate_sm.h"
+#include "http_api.h"
+#include "log_buffer.h"
 #include "reset_button.h"
 #include "wifi.h"
 
@@ -51,6 +54,11 @@ static void init_nvs(void)
 
 void app_main(void)
 {
+    // Install the log ring buffer FIRST so every subsequent ESP_LOGx
+    // call is captured — including boot-time output from NVS, WiFi,
+    // and the provisioning server.
+    log_buffer_init();
+
     esp_chip_info_t chip;
     esp_chip_info(&chip);
 
@@ -70,6 +78,13 @@ void app_main(void)
     wifi_start(&cfg);
     reset_button_start();
 
+    // Start the main HTTP API (GET /health, GET /logs, and — once
+    // implemented — GET /status, POST /open, POST /close). Only useful
+    // in STA mode (the provisioning server in wifi.c handles AP mode).
+    if (config_has_wifi(&cfg)) {
+        http_api_start(&cfg);
+    }
+
     // Feed the persisted gate timings straight into the state machine.
     gate_sm_t sm;
     const gate_sm_config_t sm_cfg = {
@@ -79,11 +94,13 @@ void app_main(void)
     gate_sm_init(&sm, &sm_cfg);
     ESP_LOGI(TAG, "gate_sm initial state: %s", gate_sm_state_name(gate_sm_state(&sm)));
 
-    uint32_t tick = 0;
     while (1) {
         gate_sm_on_tick(&sm, now_ms());
-        ESP_LOGI(TAG, "heartbeat %" PRIu32 " state=%s",
-                 tick++, gate_sm_state_name(gate_sm_state(&sm)));
+        // Heartbeat is debug-level: keeps the tick loop visible during
+        // dev but doesn't fill the 16 KB log ring buffer with noise in
+        // production. Use `idf.py monitor` or set the runtime log level
+        // to DEBUG to see these.
+        ESP_LOGD(TAG, "tick state=%s", gate_sm_state_name(gate_sm_state(&sm)));
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

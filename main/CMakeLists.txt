@@ -6,6 +6,8 @@ idf_component_register(
         "wifi.c"
         "reset_btn_sm.c"
         "reset_button.c"
+        "log_buffer.c"
+        "http_api.c"
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES
