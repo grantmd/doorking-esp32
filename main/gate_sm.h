@@ -96,11 +96,20 @@ typedef struct {
 // Initialise a gate_sm_t with the given config. Copies the config.
 void gate_sm_init(gate_sm_t *sm, const gate_sm_config_t *config);
 
-// Current state. Safe from any context.
+// Current state.
 gate_state_t gate_sm_state(const gate_sm_t *sm);
 
-// Human-readable name for a state. Never NULL.
+// Human-readable name for a state enum value. Never NULL.
 const char *gate_sm_state_name(gate_state_t state);
+
+// The most recent accepted command (NONE if no command has been accepted).
+gate_last_cmd_t gate_sm_last_cmd(const gate_sm_t *sm);
+
+// Human-readable name for a last-command enum value. Never NULL.
+const char *gate_sm_last_cmd_name(gate_last_cmd_t cmd);
+
+// Millisecond timestamp of the most recent accepted command (0 if none).
+uint64_t gate_sm_last_cmd_ms(const gate_sm_t *sm);
 
 // Request an OPEN command. Returns ACCEPTED, IDEMPOTENT, or THROTTLED.
 // On ACCEPTED, the caller must pulse the OPEN GPIO to actually move the gate.

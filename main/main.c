@@ -75,24 +75,24 @@ void app_main(void)
     ESP_ERROR_CHECK(config_load(&cfg));
     config_log(&cfg);
 
-    wifi_start(&cfg);
-    reset_button_start();
-
-    // Start the main HTTP API (GET /health, GET /logs, and — once
-    // implemented — GET /status, POST /open, POST /close). Only useful
-    // in STA mode (the provisioning server in wifi.c handles AP mode).
-    if (config_has_wifi(&cfg)) {
-        http_api_start(&cfg);
-    }
-
-    // Feed the persisted gate timings straight into the state machine.
-    gate_sm_t sm;
+    // Init the gate state machine before the HTTP API so we can pass
+    // its pointer to the API handlers.
+    static gate_sm_t sm;
     const gate_sm_config_t sm_cfg = {
         .travel_timeout_ms  = cfg.travel_timeout_ms,
         .min_cmd_spacing_ms = cfg.min_cmd_spacing_ms,
     };
     gate_sm_init(&sm, &sm_cfg);
     ESP_LOGI(TAG, "gate_sm initial state: %s", gate_sm_state_name(gate_sm_state(&sm)));
+
+    wifi_start(&cfg);
+    reset_button_start();
+
+    // Start the main HTTP API. Only useful in STA mode (the provisioning
+    // server in wifi.c handles AP mode).
+    if (config_has_wifi(&cfg)) {
+        http_api_start(&cfg, &sm);
+    }
 
     while (1) {
         gate_sm_on_tick(&sm, now_ms());

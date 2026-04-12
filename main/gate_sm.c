@@ -37,6 +37,26 @@ const char *gate_sm_state_name(gate_state_t state)
     return "INVALID";
 }
 
+gate_last_cmd_t gate_sm_last_cmd(const gate_sm_t *sm)
+{
+    return sm->last_cmd;
+}
+
+const char *gate_sm_last_cmd_name(gate_last_cmd_t cmd)
+{
+    switch (cmd) {
+        case GATE_LAST_CMD_NONE:  return "none";
+        case GATE_LAST_CMD_OPEN:  return "open";
+        case GATE_LAST_CMD_CLOSE: return "close";
+    }
+    return "unknown";
+}
+
+uint64_t gate_sm_last_cmd_ms(const gate_sm_t *sm)
+{
+    return sm->last_cmd_ms;
+}
+
 gate_cmd_result_t gate_sm_on_cmd_open(gate_sm_t *sm, uint64_t now_ms)
 {
     // Idempotent if we're already there or already heading there.
