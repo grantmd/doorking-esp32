@@ -45,32 +45,34 @@ so far — the third is waiting on shipping.
 | Module | State |
 |---|---|
 | ESP-IDF scaffold, multi-target via `sdkconfig.defaults.<target>` | done |
-| Per-target board pin map (`main/board.h`) — all three targets | done |
+| Per-target board pin map + I²C pins (`main/board.h`) — all three targets | done |
 | Gate state machine (pure C, 19 host tests) | done |
 | NVS-backed config (WiFi creds, bearer token, gate timings) | done |
 | WiFi STA mode with AP-mode provisioning fallback | done |
 | AP-mode provisioning web form + bearer token mint + reboot | done |
 | Factory reset via BOOT-button hold (pure-C sm + 7 host tests) | done |
+| HTTP API: `GET /health`, `GET /logs`, `GET /status`, `POST /open`, `POST /close` | done |
+| 16 KB RAM log ring buffer via `esp_log_set_vprintf` hook + `GET /logs` | done |
+| mDNS `<hostname>.local` (default `doorking.local`) | done |
+| I²C master bus init + boot-time device scan | done |
 | `esp32c3` build-verified and hardware-verified (XIAO) | done |
 | `esp32` build-verified and hardware-verified (Thing Plus WROOM) | done |
 | `esp32c5` build-verified, hardware pending | in progress |
 | Size-optimised `-Os` build + `TWO_OTA_LARGE` partition (1700 KB slots) | done |
 | `scripts/idf.sh` wrapper for sandbox-friendly invocations | done |
 | GitHub Actions matrix CI (3 targets) + tag-triggered releases | done |
-| Qwiic Relay I²C driver | pending |
-| HTTP API (`/health`, `/status`, `/open`, `/close`, bearer auth) | pending |
+| Qwiic Relay I²C driver (relay pulse stubs in `/open` + `/close`) | pending |
 | Embedded web UI | pending |
-| mDNS `doorking.local` | pending |
 | OTA updates | pending |
 | Homebridge plugin config | pending |
 
-Current binary sizes on ESP-IDF v5.5.4:
+Current binary sizes (ESP-IDF v5.5.4, `-Os`, `TWO_OTA_LARGE` 1700 KB slots):
 
 | Target | Binary | App partition free |
 |---|---:|---:|
-| `esp32c3` | 744 KB | 56 % (1700 KB slots) |
-| `esp32` | 724 KB | 57 % (1700 KB slots) |
-| `esp32c5` | 825 KB | 51 % (1700 KB slots) |
+| `esp32c3` | ~746 KB | ~56 % |
+| `esp32` | ~787 KB | ~55 % |
+| `esp32c5` | ~825 KB | ~51 % |
 
 Host unit tests (26 scenarios across `gate_sm` and `reset_btn_sm`) run in
 a fraction of a second with no ESP-IDF toolchain required:
@@ -259,11 +261,15 @@ If all else fails, erase flash over USB and re-flash:
 ├── sdkconfig.defaults.esp32c5   # C5-specific: 8 MB flash, USB-JTAG console, 802.15.4 off
 ├── main/                        # firmware component
 │   ├── CMakeLists.txt
+│   ├── idf_component.yml        # IDF Component Registry deps (mdns)
 │   ├── main.c                   # app_main — boots modules in order
-│   ├── board.h                  # per-target pin map + board name (#if IDF_TARGET_*)
+│   ├── board.h                  # per-target pin map + I²C pins + board name
 │   ├── gate_sm.{c,h}            # pure-C gate state machine (no ESP-IDF deps)
 │   ├── config.{c,h}             # NVS-backed persistent settings
 │   ├── wifi.{c,h}               # STA + AP-provisioning + provisioning HTTP server
+│   ├── http_api.{c,h}           # bearer-authed REST API (/health /logs /status /open /close)
+│   ├── log_buffer.{c,h}         # 16 KB RAM ring buffer, tees ESP_LOGx to buffer + UART
+│   ├── i2c_bus.{c,h}            # I²C master init + boot-time device scan
 │   ├── reset_btn_sm.{c,h}       # pure-C debounce + hold-threshold state machine
 │   └── reset_button.{c,h}       # FreeRTOS task: poll BOOT pin, clear wifi on hold
 ├── scripts/
