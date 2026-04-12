@@ -37,30 +37,43 @@ gate-operator enclosure — just Qwiic cables and screw terminals.
 
 ## Status
 
-| Module | State | File(s) |
-|---|---|---|
-| ESP-IDF scaffold, multi-target via `sdkconfig.defaults.<target>` | done | `CMakeLists.txt`, `sdkconfig.defaults`, `sdkconfig.defaults.esp32c3` |
-| Per-target board pin map | scaffolding done, only `esp32c3` block filled | `main/board.h` |
-| Gate state machine (pure C, host-testable) | done | `main/gate_sm.{c,h}`, `test/test_gate_sm.c` |
-| NVS-backed config (WiFi, token, timings) | done | `main/config.{c,h}` |
-| WiFi STA + AP-mode provisioning fallback | done | `main/wifi.{c,h}` |
-| Factory reset via BOOT-button hold | done | `main/reset_btn_sm.{c,h}`, `main/reset_button.{c,h}`, `test/test_reset_btn_sm.c` |
-| `esp32` (WROOM) target | pending | — |
-| `esp32c5` (C5) target | pending | — |
-| Qwiic Relay I²C driver | pending | — |
-| HTTP API (`/health`, `/status`, `/open`, `/close`, bearer auth) | pending | — |
-| Embedded web UI | pending | — |
-| mDNS `doorking.local` | pending | — |
-| OTA updates | pending | — |
-| Homebridge plugin config | pending | — |
+Every push to `main` runs a matrix CI build for all three targets, so any
+regression that breaks one target lands visibly before it can be merged.
+Real-hardware verification has only happened on two of the three boards
+so far — the third is waiting on shipping.
 
-Only the **`esp32c3`** target is verified on real hardware today (provisioning,
-WiFi reconnect, factory-reset button). `esp32` and `esp32c5` build-config and
-verification are in progress.
+| Module | State |
+|---|---|
+| ESP-IDF scaffold, multi-target via `sdkconfig.defaults.<target>` | done |
+| Per-target board pin map (`main/board.h`) — all three targets | done |
+| Gate state machine (pure C, 19 host tests) | done |
+| NVS-backed config (WiFi creds, bearer token, gate timings) | done |
+| WiFi STA mode with AP-mode provisioning fallback | done |
+| AP-mode provisioning web form + bearer token mint + reboot | done |
+| Factory reset via BOOT-button hold (pure-C sm + 7 host tests) | done |
+| `esp32c3` build-verified and hardware-verified (XIAO) | done |
+| `esp32` build-verified and hardware-verified (Thing Plus WROOM) | done |
+| `esp32c5` build-verified, hardware pending | in progress |
+| Size-optimised `-Os` build + `TWO_OTA_LARGE` partition (1700 KB slots) | done |
+| `scripts/idf.sh` wrapper for sandbox-friendly invocations | done |
+| GitHub Actions matrix CI (3 targets) + tag-triggered releases | done |
+| Qwiic Relay I²C driver | pending |
+| HTTP API (`/health`, `/status`, `/open`, `/close`, bearer auth) | pending |
+| Embedded web UI | pending |
+| mDNS `doorking.local` | pending |
+| OTA updates | pending |
+| Homebridge plugin config | pending |
 
-Host unit tests (26 scenarios across the gate state machine and the
-reset-button debounce/hold logic) run in a fraction of a second with no
-ESP-IDF toolchain required:
+Current binary sizes on ESP-IDF v5.5.4:
+
+| Target | Binary | App partition free |
+|---|---:|---:|
+| `esp32c3` | 744 KB | 56 % (1700 KB slots) |
+| `esp32` | 724 KB | 57 % (1700 KB slots) |
+| `esp32c5` | 825 KB | 51 % (1700 KB slots) |
+
+Host unit tests (26 scenarios across `gate_sm` and `reset_btn_sm`) run in
+a fraction of a second with no ESP-IDF toolchain required:
 
 ```
 ./test/run_tests.sh
@@ -106,29 +119,27 @@ closed → GPIO pulled to common → status = `OPEN`.
 ## Software prerequisites (macOS)
 
 The firmware requires **ESP-IDF v5.5** or newer — v5.5 is the first release
-with stable ESP32-C5 support. One-time setup:
+with stable ESP32-C5 support. One-time setup, cloning into a versioned
+directory so future IDF upgrades can live side-by-side:
 
 ```
 brew install cmake ninja dfu-util python3
 mkdir -p ~/esp && cd ~/esp
-git clone -b release/v5.5 --recursive https://github.com/espressif/esp-idf.git
-cd ~/esp/esp-idf && ./install.sh esp32,esp32c3,esp32c5
+git clone -b release/v5.5 --recursive https://github.com/espressif/esp-idf.git esp-idf-v5.5
+cd ~/esp/esp-idf-v5.5 && ./install.sh esp32,esp32c3,esp32c5
 ```
 
 Passing the comma-separated target list to `install.sh` installs the
-toolchains for all three supported targets at once. If you only want one,
-pass just that name.
+toolchains for all three supported targets in one pass. If you only want
+one, pass just that name.
 
-Activate the toolchain in any shell that needs it:
-
-```
-. ~/esp/esp-idf/export.sh
-```
-
-Optional `~/.zshrc` alias:
+The `scripts/idf.sh` wrapper (see next section) sources
+`~/esp/esp-idf-v5.5/export.sh` by default, so no manual `export.sh`
+sourcing is required for normal use. If you've installed ESP-IDF to a
+different path, override via the `IDF_EXPORT` env var:
 
 ```
-alias get_idf='. ~/esp/esp-idf/export.sh'
+IDF_EXPORT=~/esp/my-custom-idf/export.sh ./scripts/idf.sh build
 ```
 
 ## Build and flash
@@ -158,6 +169,12 @@ directly, the canonical pattern still works:
 idf.py set-target <target>
 idf.py build
 idf.py -p <serial port> flash monitor
+```
+
+Optional `~/.zshrc` alias for that flow:
+
+```
+alias get_idf='. ~/esp/esp-idf-v5.5/export.sh'
 ```
 
 Serial port patterns vary by board:
@@ -226,8 +243,8 @@ W (xxx) config:    wifi credentials and auth token cleared
 If all else fails, erase flash over USB and re-flash:
 
 ```
-idf.py -p <serial port> erase-flash
-idf.py -p <serial port> flash monitor
+./scripts/idf.sh -p <serial port> erase-flash
+./scripts/idf.sh -p <serial port> flash monitor
 ```
 
 ## Repo layout
@@ -235,12 +252,15 @@ idf.py -p <serial port> flash monitor
 ```
 .
 ├── CMakeLists.txt               # top-level ESP-IDF project file
-├── sdkconfig.defaults           # common Kconfig defaults (all targets)
+├── sdkconfig.defaults           # common defaults (all targets): partition layout,
+│                                #   FreeRTOS tick, httpd buffers, -Os optimisation
 ├── sdkconfig.defaults.esp32c3   # C3-specific: USB-JTAG console, 4 MB flash
+├── sdkconfig.defaults.esp32     # WROOM-specific: 16 MB flash, UART0 console
+├── sdkconfig.defaults.esp32c5   # C5-specific: 8 MB flash, USB-JTAG console, 802.15.4 off
 ├── main/                        # firmware component
 │   ├── CMakeLists.txt
 │   ├── main.c                   # app_main — boots modules in order
-│   ├── board.h                  # NEW: per-target pin map + board name
+│   ├── board.h                  # per-target pin map + board name (#if IDF_TARGET_*)
 │   ├── gate_sm.{c,h}            # pure-C gate state machine (no ESP-IDF deps)
 │   ├── config.{c,h}             # NVS-backed persistent settings
 │   ├── wifi.{c,h}               # STA + AP-provisioning + provisioning HTTP server
@@ -254,7 +274,7 @@ idf.py -p <serial port> flash monitor
 │   └── test_reset_btn_sm.c      # 7 debounce / hold-threshold scenarios
 └── .github/
     └── workflows/
-        └── build.yml            # host tests + ESP-IDF build + release on tag
+        └── build.yml            # host tests + 3-target matrix build + release on tag
 ```
 
 ## Adding a new target
@@ -286,7 +306,7 @@ No other files need to change — the `gate_sm`, `config`, `wifi`, and
   https://www.sparkfun.com/sparkfun-thing-plus-esp32-c5.html
 - **SparkFun Qwiic Single Relay Hookup Guide**:
   https://learn.sparkfun.com/tutorials/qwiic-single-relay-hookup-guide/all
-- **ESP-IDF Programming Guide — macOS/Linux setup**:
-  https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/get-started/linux-macos-setup.html
+- **ESP-IDF Programming Guide** (pin `release/v5.5` or newer):
+  https://docs.espressif.com/projects/esp-idf/en/release-v5.5/
 - **ESP-IDF HTTP Server API**:
-  https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-reference/protocols/esp_http_server.html
+  https://docs.espressif.com/projects/esp-idf/en/release-v5.5/esp32/api-reference/protocols/esp_http_server.html
