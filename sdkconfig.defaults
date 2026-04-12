@@ -4,8 +4,24 @@
 # based on whatever `idf.py set-target` was last run. Never pin
 # CONFIG_IDF_TARGET here; it belongs to the set-target invocation.
 
-# Partition layout: two OTA app slots + factory + NVS.
-CONFIG_PARTITION_TABLE_TWO_OTA=y
+# Partition layout: two 1700 KB OTA app slots, no factory partition.
+#
+# The built-in TWO_OTA layout gives only 1 MB per app slot, which the C5
+# build was pushing uncomfortably close to after adding dual-band WiFi 6
+# driver code. TWO_OTA_LARGE drops the "factory" fallback slot and grows
+# each OTA slot to 1700 KB — a 70 % headroom increase per slot. The
+# factory slot is only useful for commercial products where a firmware
+# brick is a business problem; for a developer-owned gate controller
+# where "plug in USB and reflash" is always 10 seconds away, it is
+# zero-value storage. OTA still works exactly the same way: updates
+# ping-pong between ota_0 and ota_1 and the bootloader can roll back
+# between them.
+#
+# Fits cleanly on all three supported targets:
+#   esp32c3: 4 MB flash  — ~3.4 MB partitioned, ~600 KB unused
+#   esp32:  16 MB flash — ~3.4 MB partitioned, ~12 MB unused
+#   esp32c5: 8 MB flash  — ~3.4 MB partitioned, ~4 MB unused
+CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y
 
 # 1 kHz FreeRTOS tick gives millisecond-granularity timers for the gate
 # state machine (pulse width, travel timeouts, command throttling).

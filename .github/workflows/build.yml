@@ -21,22 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # XIAO ESP32-C3: 4 MB flash, 80 MHz, bootloader at 0x0.
-          - target: esp32c3
-            flash_size: 4MB
-            flash_freq: 80m
-            bootloader_offset: "0x0"
-          # SparkFun Thing Plus ESP32 WROOM: 16 MB flash, 40 MHz, bootloader at 0x1000.
-          - target: esp32
-            flash_size: 16MB
-            flash_freq: 40m
-            bootloader_offset: "0x1000"
-          # SparkFun Thing Plus ESP32-C5: 8 MB flash, 80 MHz, bootloader at 0x2000.
-          - target: esp32c5
-            flash_size: 8MB
-            flash_freq: 80m
-            bootloader_offset: "0x2000"
+        target: [esp32c3, esp32, esp32c5]
 
     steps:
       - name: Checkout
@@ -51,18 +36,18 @@ jobs:
           esp_idf_version: v5.5
           target: ${{ matrix.target }}
           path: '.'
-          # Build, then merge the partitions into a single image that can be
-          # flashed in one shot. The flash_mode / flash_freq / flash_size
-          # values are target-specific and come from the matrix include.
+          # Build, then produce a merged single-image binary via
+          # `idf.py merge-bin`. Using idf.py's own merge subcommand means
+          # partition offsets, flash_size, flash_freq, and flash_mode are
+          # all read from the build's flasher_args.json — no per-target
+          # values need to be hand-maintained in this workflow, and
+          # changing the partition table (e.g. TWO_OTA → TWO_OTA_LARGE)
+          # automatically flows through without any CI changes. The -o
+          # path is relative to build/ because idf.py cd's there before
+          # calling esptool.
           command: |
             idf.py build
-            python -m esptool --chip ${{ matrix.target }} merge_bin \
-              -o build/doorking-${{ matrix.target }}-merged.bin \
-              --flash_mode dio --flash_freq ${{ matrix.flash_freq }} --flash_size ${{ matrix.flash_size }} \
-              ${{ matrix.bootloader_offset }} build/bootloader/bootloader.bin \
-              0x8000  build/partition_table/partition-table.bin \
-              0xd000  build/ota_data_initial.bin \
-              0x10000 build/doorking.bin
+            idf.py merge-bin -o doorking-${{ matrix.target }}-merged.bin
 
       - name: Upload firmware artifacts for ${{ matrix.target }}
         uses: actions/upload-artifact@v7
