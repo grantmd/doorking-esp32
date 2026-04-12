@@ -31,6 +31,7 @@
 #include "i2c_bus.h"
 #include "log_buffer.h"
 #include "reset_button.h"
+#include "ota.h"
 #include "status_led.h"
 #include "wifi.h"
 
@@ -110,6 +111,8 @@ void app_main(void)
         mdns_instance_name_set("DoorKing Gate Bridge");
         mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
         ESP_LOGI(TAG, "mdns: %s.local", cfg.hostname);
+
+        ota_init();
     }
 
     while (1) {

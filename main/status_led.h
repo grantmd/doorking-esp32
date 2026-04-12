@@ -10,6 +10,7 @@
 //   yellow  — STA mode, connecting to WiFi
 //   green   — STA mode, connected and ready
 //   red     — STA mode, WiFi lost (auto-reconnecting)
+//   magenta — OTA update in progress
 
 #pragma once
 
@@ -23,6 +24,7 @@ typedef enum {
     STATUS_LED_WIFI_CONNECTING, // yellow
     STATUS_LED_WIFI_CONNECTED,  // green
     STATUS_LED_WIFI_LOST,       // red
+    STATUS_LED_OTA_IN_PROGRESS, // magenta
 } status_led_state_t;
 
 // Initialise the WS2812 LED strip driver. No-op on boards without

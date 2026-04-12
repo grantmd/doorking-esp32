@@ -19,6 +19,9 @@ static const char *KEY_PULSE_MS    = "pulse_ms";
 static const char *KEY_MIN_SPACING = "min_spacing";
 static const char *KEY_TRAVEL_TO   = "travel_to";
 static const char *KEY_HOSTNAME    = "hostname";
+static const char *KEY_OTA_CHECK   = "ota_check";
+static const char *KEY_OTA_INSTALL = "ota_install";
+static const char *KEY_OTA_INTV    = "ota_intv";
 
 void config_defaults(doorking_config_t *cfg)
 {
@@ -27,6 +30,9 @@ void config_defaults(doorking_config_t *cfg)
     cfg->min_cmd_spacing_ms  = 2000;   // throttle between HTTP commands
     cfg->travel_timeout_ms   = 30000;  // generous ceiling for a slide gate
     strncpy(cfg->hostname, "doorking", DOORKING_HOSTNAME_MAX_LEN);
+    cfg->ota_auto_check       = 1;      // poll GitHub by default
+    cfg->ota_auto_install     = 0;      // check-only; user triggers install
+    cfg->ota_check_interval_s = 21600;  // 6 hours
 }
 
 // Load a string NVS key into dst, leaving dst unchanged on any error
@@ -41,6 +47,15 @@ static void load_string(nvs_handle_t nvs, const char *key,
         return;
     }
     dst[dst_size - 1] = '\0';
+}
+
+// Load a uint8 NVS key into *dst, leaving *dst unchanged on any error.
+static void load_u8(nvs_handle_t nvs, const char *key, uint8_t *dst)
+{
+    uint8_t value;
+    if (nvs_get_u8(nvs, key, &value) == ESP_OK) {
+        *dst = value;
+    }
 }
 
 // Load a uint32 NVS key into *dst, leaving *dst unchanged on any error.
@@ -77,6 +92,10 @@ esp_err_t config_load(doorking_config_t *cfg)
     load_u32(nvs, KEY_MIN_SPACING, &cfg->min_cmd_spacing_ms);
     load_u32(nvs, KEY_TRAVEL_TO,   &cfg->travel_timeout_ms);
 
+    load_u8(nvs,  KEY_OTA_CHECK,   &cfg->ota_auto_check);
+    load_u8(nvs,  KEY_OTA_INSTALL, &cfg->ota_auto_install);
+    load_u32(nvs, KEY_OTA_INTV,    &cfg->ota_check_interval_s);
+
     nvs_close(nvs);
     return ESP_OK;
 }
@@ -106,6 +125,9 @@ esp_err_t config_save(const doorking_config_t *cfg)
     SAVE_OR_FAIL(nvs_set_u32(nvs, KEY_PULSE_MS,    cfg->pulse_ms));
     SAVE_OR_FAIL(nvs_set_u32(nvs, KEY_MIN_SPACING, cfg->min_cmd_spacing_ms));
     SAVE_OR_FAIL(nvs_set_u32(nvs, KEY_TRAVEL_TO,   cfg->travel_timeout_ms));
+    SAVE_OR_FAIL(nvs_set_u8(nvs,  KEY_OTA_CHECK,   cfg->ota_auto_check));
+    SAVE_OR_FAIL(nvs_set_u8(nvs,  KEY_OTA_INSTALL, cfg->ota_auto_install));
+    SAVE_OR_FAIL(nvs_set_u32(nvs, KEY_OTA_INTV,    cfg->ota_check_interval_s));
 
     SAVE_OR_FAIL(nvs_commit(nvs));
     nvs_close(nvs);
@@ -164,4 +186,8 @@ void config_log(const doorking_config_t *cfg)
              (unsigned)cfg->pulse_ms,
              (unsigned)cfg->min_cmd_spacing_ms,
              (unsigned)cfg->travel_timeout_ms);
+    ESP_LOGI(TAG, "config: ota_auto_check=%u ota_auto_install=%u ota_interval=%us",
+             (unsigned)cfg->ota_auto_check,
+             (unsigned)cfg->ota_auto_install,
+             (unsigned)cfg->ota_check_interval_s);
 }

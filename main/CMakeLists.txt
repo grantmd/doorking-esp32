@@ -10,6 +10,7 @@ idf_component_register(
         "http_api.c"
         "i2c_bus.c"
         "status_led.c"
+        "ota.c"
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES
@@ -19,6 +20,11 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
+        esp_http_client
+        esp_https_ota
+        esp-tls
+        app_update
+        esp_partition
         esp_driver_gpio
         esp_driver_i2c
         mdns

@@ -1,0 +1,35 @@
+// OTA update support: rollback confirmation, push endpoint (POST /update),
+// and pull-based auto-check against GitHub Releases.
+
+#pragma once
+
+#include "esp_err.h"
+#include "esp_http_server.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Confirm the running firmware is valid (rollback protection) and start
+// the periodic GitHub Release check timer. Call from app_main after
+// WiFi + HTTP are up.
+void ota_init(void);
+
+// Write a firmware image to the next OTA partition and reboot.
+// Called from the POST /update HTTP handler (auth is checked by the
+// caller in http_api.c). Reads the binary body from req in chunks.
+esp_err_t ota_push_from_http(httpd_req_t *req);
+
+// Return the latest available version from the most recent GitHub check,
+// or NULL if no update is available / the check hasn't run yet. The
+// pointer is to a static buffer valid until the next check overwrites it.
+const char *ota_get_available_version(void);
+
+// Trigger a pull-based OTA right now (download from GitHub + flash).
+// Spawns a one-shot FreeRTOS task and returns immediately.
+// Returns ESP_ERR_INVALID_STATE if an OTA is already in progress.
+esp_err_t ota_pull_now(void);
+
+#ifdef __cplusplus
+}
+#endif

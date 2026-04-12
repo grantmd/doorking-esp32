@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # full history so git describe --tags gets the version
 
       - name: Run host-side unit tests
         run: ./test/run_tests.sh
@@ -49,6 +51,9 @@ jobs:
             idf.py build
             idf.py merge-bin -o doorking-${{ matrix.target }}-merged.bin
 
+      - name: Rename app binary for OTA
+        run: cp build/doorking.bin build/doorking-${{ matrix.target }}.bin
+
       - name: Upload firmware artifacts for ${{ matrix.target }}
         uses: actions/upload-artifact@v7
         with:
@@ -57,6 +62,7 @@ jobs:
           path: |
             build/doorking.bin
             build/doorking.elf
+            build/doorking-${{ matrix.target }}.bin
             build/doorking-${{ matrix.target }}-merged.bin
             build/bootloader/bootloader.bin
             build/partition_table/partition-table.bin
@@ -82,11 +88,27 @@ jobs:
         with:
           generate_release_notes: true
           files: |
+            artifacts/firmware-esp32c3/doorking-esp32c3.bin
+            artifacts/firmware-esp32/doorking-esp32.bin
+            artifacts/firmware-esp32c5/doorking-esp32c5.bin
             artifacts/firmware-esp32c3/doorking-esp32c3-merged.bin
             artifacts/firmware-esp32/doorking-esp32-merged.bin
             artifacts/firmware-esp32c5/doorking-esp32c5-merged.bin
           body: |
-            ## Flashing
+            ## OTA update
+
+            Devices running v0.5.0+ with OTA support will detect this
+            release automatically. Visit `http://doorking.local/` to see
+            the available update and install it, or push manually:
+
+            ```
+            curl -X POST http://doorking.local/update \
+              -H "Authorization: Bearer <token>" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @doorking-<target>.bin
+            ```
+
+            ## USB flashing
 
             Each supported target ships a pre-merged single-image binary.
             Pick the one for your board and flash with `esptool`.

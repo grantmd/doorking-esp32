@@ -56,6 +56,9 @@ void status_led_set_state(status_led_state_t state)
     case STATUS_LED_WIFI_LOST:
         r = DIM;                       // red
         break;
+    case STATUS_LED_OTA_IN_PROGRESS:
+        r = DIM; b = DIM;             // magenta
+        break;
     }
 
     led_strip_set_pixel(s_strip, 0, r, g, b);

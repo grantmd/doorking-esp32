@@ -48,6 +48,11 @@ typedef struct {
 
     // Network identity.
     char hostname[DOORKING_HOSTNAME_MAX_LEN + 1];
+
+    // OTA settings.
+    uint8_t  ota_auto_check;       // 1 = poll GitHub for updates (default)
+    uint8_t  ota_auto_install;     // 1 = auto-install + reboot (default 0)
+    uint32_t ota_check_interval_s; // seconds between checks (default 21600 = 6 h)
 } doorking_config_t;
 
 // Populate cfg with compile-time defaults. Does not touch NVS.

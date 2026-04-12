@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -9,6 +10,7 @@
 #include "config.h"
 #include "gate_sm.h"
 #include "log_buffer.h"
+#include "ota.h"
 
 static const char *TAG = "http_api";
 
@@ -73,9 +75,24 @@ static bool require_auth(httpd_req_t *req)
 
 static esp_err_t handle_health(httpd_req_t *req)
 {
+    const esp_app_desc_t *app = esp_app_get_description();
+    const char *update_ver = ota_get_available_version();
+
+    char body[256];
+    if (update_ver) {
+        snprintf(body, sizeof(body),
+                 "{\"ok\":true,\"version\":\"%s\",\"target\":\"%s\","
+                 "\"update_available\":\"%s\"}",
+                 app->version, CONFIG_IDF_TARGET, update_ver);
+    } else {
+        snprintf(body, sizeof(body),
+                 "{\"ok\":true,\"version\":\"%s\",\"target\":\"%s\","
+                 "\"update_available\":null}",
+                 app->version, CONFIG_IDF_TARGET);
+    }
+
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, "{\"ok\":true}");
-    return ESP_OK;
+    return httpd_resp_sendstr(req, body);
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +223,117 @@ static esp_err_t handle_close(httpd_req_t *req)
 }
 
 // ---------------------------------------------------------------------------
+// GET / — dashboard page (unauthenticated)
+// ---------------------------------------------------------------------------
+
+static esp_err_t handle_dashboard(httpd_req_t *req)
+{
+    const esp_app_desc_t *app = esp_app_get_description();
+    const char *update_ver = ota_get_available_version();
+
+    // Build the update section dynamically.
+    char update_html[1024];
+    if (update_ver) {
+        snprintf(update_html, sizeof(update_html),
+            "<p><strong>Update available: %s</strong></p>"
+            "<button id=\"btn\" onclick=\"doUpdate()\">Update firmware</button>"
+            "<p id=\"msg\" style=\"display:none;color:#666;font-size:.9em\"></p>"
+            "<script>"
+            "function doUpdate(){"
+            "var t=prompt('Enter bearer token to authorise the update:');"
+            "if(!t)return;"
+            "var b=document.getElementById('btn'),m=document.getElementById('msg');"
+            "b.disabled=true;b.textContent='Updating\\u2026';"
+            "m.style.display='block';m.textContent='Downloading and flashing. Do not power off.';"
+            "fetch('/update/pull',{method:'POST',headers:{'Authorization':'Bearer '+t}})"
+            ".then(function(r){return r.json()})"
+            ".then(function(d){"
+            "if(d.rebooting){m.textContent='Update installed. Rebooting\\u2026';}"
+            "else{m.textContent='Error: '+(d.error||'unknown');b.disabled=false;b.textContent='Update firmware';}"
+            "})"
+            ".catch(function(e){m.textContent='Network error: '+e;b.disabled=false;b.textContent='Update firmware';});"
+            "}"
+            "</script>",
+            update_ver);
+    } else {
+        snprintf(update_html, sizeof(update_html),
+            "<p style=\"color:#666\">Up to date</p>");
+    }
+
+    char body[2560];
+    snprintf(body, sizeof(body),
+        "<!DOCTYPE html>\n"
+        "<html lang=\"en\">\n"
+        "<head>\n"
+        "<meta charset=\"utf-8\">\n"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+        "<title>doorking-esp32</title>\n"
+        "<style>\n"
+        "body{font-family:-apple-system,system-ui,sans-serif;max-width:420px;"
+        "margin:2em auto;padding:0 1em;color:#222}\n"
+        "h1{font-size:1.4em}\n"
+        "a{color:#2d7ff9}\n"
+        "table{border-collapse:collapse;width:100%%}\n"
+        "td{padding:.3em 0}\n"
+        "td:first-child{color:#666;padding-right:1em}\n"
+        "button{margin-top:.5em;padding:.6em 1.2em;font-size:1em;"
+        "background:#2d7ff9;color:#fff;border:0;border-radius:6px;cursor:pointer}\n"
+        "button:disabled{background:#999;cursor:wait}\n"
+        "</style>\n"
+        "</head><body>\n"
+        "<h1>doorking-esp32</h1>\n"
+        "<p><a href=\"https://github.com/grantmd/doorking-esp32\">github.com/grantmd/doorking-esp32</a></p>\n"
+        "<table>\n"
+        "<tr><td>Firmware</td><td>%s</td></tr>\n"
+        "<tr><td>Target</td><td>%s</td></tr>\n"
+        "</table>\n"
+        "<hr style=\"margin:1em 0;border:0;border-top:1px solid #ddd\">\n"
+        "%s\n"
+        "</body></html>\n",
+        app->version, CONFIG_IDF_TARGET, update_html);
+
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    return httpd_resp_sendstr(req, body);
+}
+
+// ---------------------------------------------------------------------------
+// POST /update — push OTA firmware upload
+// ---------------------------------------------------------------------------
+
+static esp_err_t handle_push_update(httpd_req_t *req)
+{
+    if (!require_auth(req)) {
+        return ESP_OK;
+    }
+    return ota_push_from_http(req);
+}
+
+// ---------------------------------------------------------------------------
+// POST /update/pull — trigger pull OTA from GitHub
+// ---------------------------------------------------------------------------
+
+static esp_err_t handle_pull_update(httpd_req_t *req)
+{
+    if (!require_auth(req)) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = ota_pull_now();
+    httpd_resp_set_type(req, "application/json");
+
+    if (err == ESP_ERR_INVALID_STATE) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_sendstr(req, "{\"error\":\"OTA already in progress\"}");
+    }
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        return httpd_resp_sendstr(req, "{\"error\":\"failed to start OTA\"}");
+    }
+
+    return httpd_resp_sendstr(req, "{\"result\":\"ok\",\"rebooting\":true}");
+}
+
+// ---------------------------------------------------------------------------
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
@@ -224,14 +352,21 @@ void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm)
 
     httpd_config_t http_cfg = HTTPD_DEFAULT_CONFIG();
     http_cfg.server_port = 80;
-    http_cfg.stack_size  = 8192;
-    http_cfg.max_uri_handlers = 8;  // default is 8, explicit for clarity
+    http_cfg.stack_size  = 10240;  // bumped from 8192 for OTA write path
+    http_cfg.max_uri_handlers = 10;  // / + /health + /logs + /status + /open + /close + /update + /update/pull
 
     esp_err_t err = httpd_start(&s_httpd, &http_cfg);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start failed: %s", esp_err_to_name(err));
         return;
     }
+
+    const httpd_uri_t dashboard = {
+        .uri     = "/",
+        .method  = HTTP_GET,
+        .handler = handle_dashboard,
+    };
+    httpd_register_uri_handler(s_httpd, &dashboard);
 
     const httpd_uri_t health = {
         .uri     = "/health",
@@ -268,6 +403,20 @@ void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm)
     };
     httpd_register_uri_handler(s_httpd, &close);
 
-    ESP_LOGI(TAG, "http api listening on port %d (/health /logs /status /open /close)",
+    const httpd_uri_t update = {
+        .uri     = "/update",
+        .method  = HTTP_POST,
+        .handler = handle_push_update,
+    };
+    httpd_register_uri_handler(s_httpd, &update);
+
+    const httpd_uri_t pull = {
+        .uri     = "/update/pull",
+        .method  = HTTP_POST,
+        .handler = handle_pull_update,
+    };
+    httpd_register_uri_handler(s_httpd, &pull);
+
+    ESP_LOGI(TAG, "http api listening on port %d (/ /health /logs /status /open /close /update /update/pull)",
              http_cfg.server_port);
 }

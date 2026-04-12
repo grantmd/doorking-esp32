@@ -6,11 +6,14 @@
 // is up.
 //
 // Endpoints:
-//   GET  /health  -> {"ok":true}                           (no auth)
-//   GET  /logs    -> ring buffer text/plain dump            (bearer auth)
-//   GET  /status  -> gate state + last command JSON         (bearer auth)
-//   POST /open    -> command gate open, pulse OPEN relay    (bearer auth)
-//   POST /close   -> command gate close, pulse CLOSE relay  (bearer auth)
+//   GET  /            -> dashboard HTML                        (no auth)
+//   GET  /health      -> liveness + version JSON               (no auth)
+//   GET  /logs        -> ring buffer text/plain dump           (bearer auth)
+//   GET  /status      -> gate state + last command JSON        (bearer auth)
+//   POST /open        -> command gate open, pulse OPEN relay   (bearer auth)
+//   POST /close       -> command gate close, pulse CLOSE relay (bearer auth)
+//   POST /update      -> push OTA firmware upload              (bearer auth)
+//   POST /update/pull -> trigger pull OTA from GitHub          (bearer auth)
 
 #pragma once
 

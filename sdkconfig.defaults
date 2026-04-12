@@ -44,3 +44,9 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 # 431 before the handler ever runs. 2 KB is comfortable headroom.
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
 CONFIG_HTTPD_MAX_URI_LEN=1024
+
+# OTA rollback: after flashing a new image, the bootloader marks it as
+# "pending verify". The firmware must call esp_ota_mark_app_valid() to
+# commit. If it crashes or fails to connect within 120 s, the bootloader
+# rolls back to the previous OTA slot on the next reboot.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
