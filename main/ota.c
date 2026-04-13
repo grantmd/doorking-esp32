@@ -340,20 +340,19 @@ static esp_err_t download_and_flash(const char *url)
         }
 
         if (status >= 300 && status < 400) {
-            // Read the Location header and redirect.
-            char *location = NULL;
-            esp_http_client_get_header(client, "Location", &location);
-            if (!location || location[0] == '\0') {
-                ESP_LOGE(TAG, "redirect %d but no Location header", status);
-                esp_http_client_close(client);
+            // The client internally captures the Location header.
+            // esp_http_client_set_redirection reads it and updates the URL.
+            esp_http_client_close(client);
+            err = esp_http_client_set_redirection(client);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "redirect %d but set_redirection failed: %s",
+                         status, esp_err_to_name(err));
                 esp_http_client_cleanup(client);
                 status_led_set_state(STATUS_LED_WIFI_CONNECTED);
                 return ESP_FAIL;
             }
-            ESP_LOGI(TAG, "following redirect %d -> %s", status, location);
-            esp_http_client_close(client);
-            esp_http_client_set_url(client, location);
-            // CDN doesn't need the Accept header; clear custom headers.
+            ESP_LOGI(TAG, "following redirect %d", status);
+            // CDN doesn't need the Accept header.
             esp_http_client_delete_header(client, "Accept");
             continue;
         }
