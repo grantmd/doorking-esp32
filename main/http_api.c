@@ -5,7 +5,10 @@
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "config.h"
 #include "gate_sm.h"
@@ -334,6 +337,30 @@ static esp_err_t handle_pull_update(httpd_req_t *req)
 }
 
 // ---------------------------------------------------------------------------
+// POST /reboot — authenticated device restart
+// ---------------------------------------------------------------------------
+
+static void delayed_reboot(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+}
+
+static esp_err_t handle_reboot(httpd_req_t *req)
+{
+    if (!require_auth(req)) {
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "POST /reboot: rebooting in 1 s");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"result\":\"ok\",\"rebooting\":true}");
+    xTaskCreate(delayed_reboot, "reboot", 2048, NULL, 5, NULL);
+    return ESP_OK;
+}
+
+// ---------------------------------------------------------------------------
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
@@ -417,6 +444,13 @@ void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm)
     };
     httpd_register_uri_handler(s_httpd, &pull);
 
-    ESP_LOGI(TAG, "http api listening on port %d (/ /health /logs /status /open /close /update /update/pull)",
+    const httpd_uri_t reboot = {
+        .uri     = "/reboot",
+        .method  = HTTP_POST,
+        .handler = handle_reboot,
+    };
+    httpd_register_uri_handler(s_httpd, &reboot);
+
+    ESP_LOGI(TAG, "http api listening on port %d (/ /health /logs /status /open /close /update /update/pull /reboot)",
              http_cfg.server_port);
 }

@@ -14,6 +14,7 @@
 //   POST /close       -> command gate close, pulse CLOSE relay (bearer auth)
 //   POST /update      -> push OTA firmware upload              (bearer auth)
 //   POST /update/pull -> trigger pull OTA from GitHub          (bearer auth)
+//   POST /reboot      -> restart the device                    (bearer auth)
 
 #pragma once
 
