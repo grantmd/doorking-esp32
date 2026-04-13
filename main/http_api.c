@@ -235,35 +235,21 @@ static esp_err_t handle_dashboard(httpd_req_t *req)
     const char *update_ver = ota_get_available_version();
 
     // Build the update section dynamically.
-    char update_html[1024];
+    char update_html[256];
     if (update_ver) {
         snprintf(update_html, sizeof(update_html),
             "<p><strong>Update available: %s</strong></p>"
-            "<button id=\"btn\" onclick=\"doUpdate()\">Update firmware</button>"
-            "<p id=\"msg\" style=\"display:none;color:#666;font-size:.9em\"></p>"
-            "<script>"
-            "function doUpdate(){"
-            "var t=prompt('Enter bearer token to authorise the update:');"
-            "if(!t)return;"
-            "var b=document.getElementById('btn'),m=document.getElementById('msg');"
-            "b.disabled=true;b.textContent='Updating\\u2026';"
-            "m.style.display='block';m.textContent='Downloading and flashing. Do not power off.';"
-            "fetch('/update/pull',{method:'POST',headers:{'Authorization':'Bearer '+t}})"
-            ".then(function(r){return r.json()})"
-            ".then(function(d){"
-            "if(d.rebooting){m.textContent='Update installed. Rebooting\\u2026';}"
-            "else{m.textContent='Error: '+(d.error||'unknown');b.disabled=false;b.textContent='Update firmware';}"
-            "})"
-            ".catch(function(e){m.textContent='Network error: '+e;b.disabled=false;b.textContent='Update firmware';});"
-            "}"
-            "</script>",
+            "<button class=\"btn\" onclick=\"authPost('/update/pull','Updating\\u2026',"
+            "'Downloading and flashing. Do not power off.')\">Update firmware</button>",
             update_ver);
     } else {
         snprintf(update_html, sizeof(update_html),
             "<p style=\"color:#666\">Up to date</p>");
     }
 
-    char body[2560];
+    // The page is small enough to build in a single snprintf. The shared
+    // JavaScript handles auth-prompted POST actions for all three buttons.
+    char body[3072];
     snprintf(body, sizeof(body),
         "<!DOCTYPE html>\n"
         "<html lang=\"en\">\n"
@@ -279,9 +265,10 @@ static esp_err_t handle_dashboard(httpd_req_t *req)
         "table{border-collapse:collapse;width:100%%}\n"
         "td{padding:.3em 0}\n"
         "td:first-child{color:#666;padding-right:1em}\n"
-        "button{margin-top:.5em;padding:.6em 1.2em;font-size:1em;"
+        ".btn{margin-top:.5em;margin-right:.5em;padding:.6em 1.2em;font-size:1em;"
         "background:#2d7ff9;color:#fff;border:0;border-radius:6px;cursor:pointer}\n"
-        "button:disabled{background:#999;cursor:wait}\n"
+        ".btn:disabled{background:#999;cursor:wait}\n"
+        ".btn-secondary{background:#666}\n"
         "</style>\n"
         "</head><body>\n"
         "<h1>doorking-esp32</h1>\n"
@@ -292,6 +279,47 @@ static esp_err_t handle_dashboard(httpd_req_t *req)
         "</table>\n"
         "<hr style=\"margin:1em 0;border:0;border-top:1px solid #ddd\">\n"
         "%s\n"
+        "<hr style=\"margin:1em 0;border:0;border-top:1px solid #ddd\">\n"
+        "<button class=\"btn btn-secondary\" onclick=\"doCheck()\">Check for updates</button>"
+        "<button class=\"btn btn-secondary\" onclick=\"authPost('/reboot','Rebooting\\u2026')\">Reboot</button>"
+        "<p id=\"msg\" style=\"display:none;color:#666;font-size:.9em\"></p>\n"
+        "<script>\n"
+        "var tk=null;\n"
+        "function getToken(){"
+        "if(!tk){tk=prompt('Enter bearer token:');}"
+        "return tk;}\n"
+        "function authPost(url,msgText){\n"
+        "if(!getToken())return;\n"
+        "var m=document.getElementById('msg');\n"
+        "m.style.display='block';m.textContent=msgText;\n"
+        "fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+tk}})\n"
+        ".then(function(r){"
+        "if(r.status===401){tk=null;m.textContent='Invalid token.';return;}\n"
+        "return r.json();})\n"
+        ".then(function(d){\n"
+        "if(!d)return;\n"
+        "if(d.error){m.textContent='Error: '+d.error;}\n"
+        "else{m.textContent=msgText;}\n"
+        "})\n"
+        ".catch(function(e){m.textContent='Network error: '+e;});\n"
+        "}\n"
+        "function doCheck(){\n"
+        "if(!getToken())return;\n"
+        "var m=document.getElementById('msg');\n"
+        "m.style.display='block';m.textContent='Checking for updates\\u2026';\n"
+        "fetch('/update/check',{method:'POST',headers:{'Authorization':'Bearer '+tk}})\n"
+        ".then(function(r){"
+        "if(r.status===401){tk=null;m.textContent='Invalid token.';return;}\n"
+        "return r.json();})\n"
+        ".then(function(d){\n"
+        "if(!d)return;\n"
+        "if(d.error){m.textContent='Error: '+d.error;return;}\n"
+        "m.textContent='Check started. Reloading\\u2026';\n"
+        "setTimeout(function(){location.reload();},5000);\n"
+        "})\n"
+        ".catch(function(e){m.textContent='Network error: '+e;});\n"
+        "}\n"
+        "</script>\n"
         "</body></html>\n",
         app->version, CONFIG_IDF_TARGET, update_html);
 
@@ -334,6 +362,31 @@ static esp_err_t handle_pull_update(httpd_req_t *req)
     }
 
     return httpd_resp_sendstr(req, "{\"result\":\"ok\",\"rebooting\":true}");
+}
+
+// ---------------------------------------------------------------------------
+// POST /update/check — trigger an update check against GitHub
+// ---------------------------------------------------------------------------
+
+static esp_err_t handle_check_update(httpd_req_t *req)
+{
+    if (!require_auth(req)) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = ota_check_now();
+    httpd_resp_set_type(req, "application/json");
+
+    if (err == ESP_ERR_INVALID_STATE) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_sendstr(req, "{\"error\":\"check already in progress\"}");
+    }
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        return httpd_resp_sendstr(req, "{\"error\":\"failed to start check\"}");
+    }
+
+    return httpd_resp_sendstr(req, "{\"result\":\"ok\"}");
 }
 
 // ---------------------------------------------------------------------------
@@ -380,7 +433,7 @@ void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm)
     httpd_config_t http_cfg = HTTPD_DEFAULT_CONFIG();
     http_cfg.server_port = 80;
     http_cfg.stack_size  = 10240;  // bumped from 8192 for OTA write path
-    http_cfg.max_uri_handlers = 10;  // / + /health + /logs + /status + /open + /close + /update + /update/pull
+    http_cfg.max_uri_handlers = 12;
 
     esp_err_t err = httpd_start(&s_httpd, &http_cfg);
     if (err != ESP_OK) {
@@ -443,6 +496,13 @@ void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm)
         .handler = handle_pull_update,
     };
     httpd_register_uri_handler(s_httpd, &pull);
+
+    const httpd_uri_t check = {
+        .uri     = "/update/check",
+        .method  = HTTP_POST,
+        .handler = handle_check_update,
+    };
+    httpd_register_uri_handler(s_httpd, &check);
 
     const httpd_uri_t reboot = {
         .uri     = "/reboot",

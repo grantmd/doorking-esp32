@@ -12,9 +12,10 @@
 //   GET  /status      -> gate state + last command JSON        (bearer auth)
 //   POST /open        -> command gate open, pulse OPEN relay   (bearer auth)
 //   POST /close       -> command gate close, pulse CLOSE relay (bearer auth)
-//   POST /update      -> push OTA firmware upload              (bearer auth)
-//   POST /update/pull -> trigger pull OTA from GitHub          (bearer auth)
-//   POST /reboot      -> restart the device                    (bearer auth)
+//   POST /update       -> push OTA firmware upload              (bearer auth)
+//   POST /update/check -> check GitHub for new release          (bearer auth)
+//   POST /update/pull  -> trigger pull OTA from GitHub          (bearer auth)
+//   POST /reboot       -> restart the device                    (bearer auth)
 
 #pragma once
 

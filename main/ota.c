@@ -585,6 +585,22 @@ static void ota_check_task(void *arg)
     vTaskDelete(NULL);
 }
 
+esp_err_t ota_check_now(void)
+{
+    if (s_ota_in_progress) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_ota_in_progress = true;
+    BaseType_t ret = xTaskCreate(ota_check_task, "ota_check",
+                                 OTA_CHECK_STACK_SIZE, (void *)(uintptr_t)false,
+                                 5, NULL);
+    if (ret != pdPASS) {
+        s_ota_in_progress = false;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
 esp_err_t ota_pull_now(void)
 {
     if (s_ota_in_progress) {

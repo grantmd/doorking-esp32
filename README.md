@@ -55,24 +55,26 @@ so far — the third is waiting on shipping.
 | 16 KB RAM log ring buffer via `esp_log_set_vprintf` hook + `GET /logs` | done |
 | mDNS `<hostname>.local` (default `doorking.local`) | done |
 | I²C master bus init + boot-time device scan | done |
+| OTA updates — push (`POST /update`) + pull (GitHub Releases auto-check) | done |
+| Rollback protection (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` + 120 s WiFi watchdog) | done |
+| Dashboard at `GET /` with version info, update button, check + reboot controls | done |
+| `POST /reboot` remote restart endpoint | done |
 | `esp32c3` build-verified and hardware-verified (XIAO) | done |
 | `esp32` build-verified and hardware-verified (Thing Plus WROOM) | done |
 | `esp32c5` build-verified, hardware pending | in progress |
 | Size-optimised `-Os` build + `TWO_OTA_LARGE` partition (1700 KB slots) | done |
 | `scripts/idf.sh` wrapper for sandbox-friendly invocations | done |
-| GitHub Actions matrix CI (3 targets) + tag-triggered releases | done |
+| GitHub Actions matrix CI (3 targets) + tag-triggered releases with OTA assets | done |
 | Qwiic Relay I²C driver (relay pulse stubs in `/open` + `/close`) | pending |
-| Embedded web UI | pending |
-| OTA updates | pending |
 | Homebridge plugin config | pending |
 
 Current binary sizes (ESP-IDF v5.5.4, `-Os`, `TWO_OTA_LARGE` 1700 KB slots):
 
 | Target | Binary | App partition free |
 |---|---:|---:|
-| `esp32c3` | ~746 KB | ~56 % |
-| `esp32` | ~787 KB | ~55 % |
-| `esp32c5` | ~825 KB | ~51 % |
+| `esp32c3` | ~1026 KB | ~41 % |
+| `esp32` | ~1062 KB | ~39 % |
+| `esp32c5` | ~1100 KB | ~35 % |
 
 Host unit tests (26 scenarios across `gate_sm` and `reset_btn_sm`) run in
 a fraction of a second with no ESP-IDF toolchain required:
@@ -249,6 +251,49 @@ If all else fails, erase flash over USB and re-flash:
 ./scripts/idf.sh -p <serial port> flash monitor
 ```
 
+## OTA updates
+
+The firmware supports two update paths. Both use ESP-IDF's dual OTA
+partitions — the new image is written to the inactive slot, then the
+bootloader swaps on reboot with automatic rollback if the new firmware
+fails to connect to WiFi within 120 seconds.
+
+### Pull (automatic)
+
+The device checks the GitHub Releases API every 6 hours (configurable via
+NVS `ota_intv`). When a new release is found, the version is cached and
+shown on the dashboard at `http://doorking.local/`. Click **Update
+firmware** on the dashboard to download and install, or set `ota_install`
+to `1` in NVS for fully hands-off updates.
+
+### Push (manual)
+
+Upload a firmware binary directly from the LAN:
+
+```
+curl -X POST http://doorking.local/update \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @build/doorking.bin
+```
+
+The device validates the image (including chip-ID check — you can't flash
+an `esp32c3` binary onto an `esp32` board) and reboots on success.
+
+### Dashboard
+
+Visit `http://doorking.local/` for a lightweight status page showing the
+current firmware version, target chip, and available update. The page
+also has **Check for updates** and **Reboot** buttons (both require the
+bearer token).
+
+### Rollback
+
+If a freshly-OTA'd firmware fails to get an IP address within 120 seconds,
+the device reboots and the bootloader automatically rolls back to the
+previous working firmware. USB reflash is always available as a last
+resort.
+
 ## Repo layout
 
 ```
@@ -267,9 +312,12 @@ If all else fails, erase flash over USB and re-flash:
 │   ├── gate_sm.{c,h}            # pure-C gate state machine (no ESP-IDF deps)
 │   ├── config.{c,h}             # NVS-backed persistent settings
 │   ├── wifi.{c,h}               # STA + AP-provisioning + provisioning HTTP server
-│   ├── http_api.{c,h}           # bearer-authed REST API (/health /logs /status /open /close)
+│   ├── http_api.{c,h}           # REST API + dashboard (/ /health /logs /status /open /close
+│   │                            #   /update /update/check /update/pull /reboot)
+│   ├── ota.{c,h}                # OTA: push upload, GitHub pull check, rollback confirmation
 │   ├── log_buffer.{c,h}         # 16 KB RAM ring buffer, tees ESP_LOGx to buffer + UART
 │   ├── i2c_bus.{c,h}            # I²C master init + boot-time device scan
+│   ├── status_led.{c,h}         # WS2812 RGB status LED (WiFi state, OTA progress)
 │   ├── reset_btn_sm.{c,h}       # pure-C debounce + hold-threshold state machine
 │   └── reset_button.{c,h}       # FreeRTOS task: poll BOOT pin, clear wifi on hold
 ├── scripts/

@@ -25,6 +25,11 @@ esp_err_t ota_push_from_http(httpd_req_t *req);
 // pointer is to a static buffer valid until the next check overwrites it.
 const char *ota_get_available_version(void);
 
+// Check GitHub for a new release right now (no install). Updates the
+// cached available version. Spawns a one-shot FreeRTOS task and returns
+// immediately. Returns ESP_ERR_INVALID_STATE if a check is in progress.
+esp_err_t ota_check_now(void);
+
 // Trigger a pull-based OTA right now (download from GitHub + flash).
 // Spawns a one-shot FreeRTOS task and returns immediately.
 // Returns ESP_ERR_INVALID_STATE if an OTA is already in progress.
