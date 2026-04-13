@@ -303,12 +303,14 @@ static esp_err_t download_and_flash(const char *url)
     ESP_LOGI(TAG, "downloading OTA image from %s", url);
     status_led_set_state(STATUS_LED_OTA_IN_PROGRESS);
 
+    // GitHub's browser_download_url redirects (302) to their CDN.
+    // esp_http_client_open + manual read doesn't follow redirects, so we
+    // handle them manually: open, check for 3xx, read Location, re-open.
     esp_http_client_config_t http_cfg = {
         .url = url,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = 30000,
         .buffer_size = OTA_BUF_SIZE,
-        .max_redirection_count = 5,  // GitHub redirects to CDN
     };
     esp_http_client_handle_t client = esp_http_client_init(&http_cfg);
     if (!client) {
@@ -317,28 +319,54 @@ static esp_err_t download_and_flash(const char *url)
         return ESP_FAIL;
     }
 
-    // Set Accept header for GitHub asset download.
     esp_http_client_set_header(client, "Accept", "application/octet-stream");
 
-    esp_err_t err = esp_http_client_open(client, 0);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "http open failed: %s", esp_err_to_name(err));
-        esp_http_client_cleanup(client);
-        status_led_set_state(STATUS_LED_WIFI_CONNECTED);
-        return err;
-    }
+    // Follow redirects manually (up to 5 hops).
+    esp_err_t err;
+    for (int redirects = 0; redirects < 5; redirects++) {
+        err = esp_http_client_open(client, 0);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "http open failed: %s", esp_err_to_name(err));
+            esp_http_client_cleanup(client);
+            status_led_set_state(STATUS_LED_WIFI_CONNECTED);
+            return err;
+        }
 
-    int content_length = esp_http_client_fetch_headers(client);
-    int status = esp_http_client_get_status_code(client);
-    ESP_LOGI(TAG, "HTTP %d, content-length=%d", status, content_length);
+        esp_http_client_fetch_headers(client);
+        int status = esp_http_client_get_status_code(client);
 
-    if (status != 200) {
+        if (status == 200) {
+            break;  // we're at the final URL
+        }
+
+        if (status >= 300 && status < 400) {
+            // Read the Location header and redirect.
+            char *location = NULL;
+            esp_http_client_get_header(client, "Location", &location);
+            if (!location || location[0] == '\0') {
+                ESP_LOGE(TAG, "redirect %d but no Location header", status);
+                esp_http_client_close(client);
+                esp_http_client_cleanup(client);
+                status_led_set_state(STATUS_LED_WIFI_CONNECTED);
+                return ESP_FAIL;
+            }
+            ESP_LOGI(TAG, "following redirect %d -> %s", status, location);
+            esp_http_client_close(client);
+            esp_http_client_set_url(client, location);
+            // CDN doesn't need the Accept header; clear custom headers.
+            esp_http_client_delete_header(client, "Accept");
+            continue;
+        }
+
         ESP_LOGE(TAG, "unexpected HTTP status %d", status);
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
         return ESP_FAIL;
     }
+
+    int content_length = esp_http_client_get_content_length(client);
+    ESP_LOGI(TAG, "HTTP 200, content-length=%d", content_length);
 
     const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
     if (!next) {
