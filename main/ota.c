@@ -310,7 +310,8 @@ static esp_err_t download_and_flash(const char *url)
         .url = url,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = 30000,
-        .buffer_size = OTA_BUF_SIZE,
+        .buffer_size = OTA_BUF_SIZE,      // RX buffer
+        .buffer_size_tx = 1024,           // TX buffer — CDN URLs are long
     };
     esp_http_client_handle_t client = esp_http_client_init(&http_cfg);
     if (!client) {
