@@ -106,6 +106,13 @@ void app_main(void)
 
         // Advertise as <hostname>.local on the LAN so the user (and
         // Homebridge) can reach the device without knowing its DHCP IP.
+        // Suppress transient mDNS allocation errors that happen when TLS
+        // handshakes temporarily starve the heap. These are harmless —
+        // mDNS recovers when the TLS connection closes — but they fill
+        // the 16 KB log ring buffer with noise.
+        esp_log_level_set("mdns_send", ESP_LOG_NONE);
+        esp_log_level_set("mdns_receive", ESP_LOG_NONE);
+        esp_log_level_set("mdns_networking", ESP_LOG_NONE);
         ESP_ERROR_CHECK(mdns_init());
         ESP_ERROR_CHECK(mdns_hostname_set(cfg.hostname));
         mdns_instance_name_set("DoorKing Gate Bridge");

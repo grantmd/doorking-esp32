@@ -505,8 +505,8 @@ static void ota_check_task(void *arg)
     // Read the JSON response. GitHub's latest-release response is typically
     // 2-8 KB depending on release notes. Allocate enough for a reasonable
     // response; truncate if larger (we only need tag_name and asset URLs).
-    int json_buf_size = (content_length > 0 && content_length < 16384)
-                        ? content_length + 1 : 16384;
+    int json_buf_size = (content_length > 0 && content_length < 8192)
+                        ? content_length + 1 : 8192;
     char *json = malloc(json_buf_size);
     if (!json) {
         ESP_LOGE(TAG, "malloc failed for JSON (%d bytes)", json_buf_size);
