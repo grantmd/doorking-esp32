@@ -55,10 +55,12 @@ so far — the third is waiting on shipping.
 | 16 KB RAM log ring buffer via `esp_log_set_vprintf` hook + `GET /logs` | done |
 | mDNS `<hostname>.local` (default `doorking.local`) | done |
 | I²C master bus init + boot-time device scan | done |
+| WS2812 RGB status LED (WiFi state + OTA progress) | done |
 | OTA updates — push (`POST /update`) + pull (GitHub Releases auto-check) | done |
 | Rollback protection (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` + 120 s WiFi watchdog) | done |
-| Dashboard at `GET /` with version info, update button, check + reboot controls | done |
+| Dashboard at `GET /` with version, update, check + reboot controls | done |
 | `POST /reboot` remote restart endpoint | done |
+| `POST /update/check` on-demand GitHub release check | done |
 | `esp32c3` build-verified and hardware-verified (XIAO) | done |
 | `esp32` build-verified and hardware-verified (Thing Plus WROOM) | done |
 | `esp32c5` build-verified, hardware pending | in progress |
@@ -294,6 +296,31 @@ the device reboots and the bootloader automatically rolls back to the
 previous working firmware. USB reflash is always available as a last
 resort.
 
+## 3D-printable baseplate
+
+The `enclosure/` directory contains OpenSCAD models for mounting baseplates
+that hold a dev board and two Qwiic Single Relay modules. Two variants:
+
+- **`baseplate-thingplus.scad`** — for the SparkFun Thing Plus (WROOM or
+  C5). The board mounts on two standoffs at the USB end and two solid
+  support posts at the radio end, with USB-C facing outward. The two
+  relays sit side by side below on four standoffs each.
+- **`baseplate-xiao.scad`** — for the Seeed XIAO ESP32-C3. The XIAO has
+  no mounting holes, so it sits in a friction-fit clip holder with a
+  USB-C cutout.
+
+Both plates include mounting tabs with screw holes for attaching to the
+gate operator enclosure wall, and engraved "ESP32"/"XIAO", "OPEN", and
+"CLOSE" labels.
+
+Board dimensions were extracted from the SparkFun Eagle/KiCad design files
+and Seeed documentation. Shared parameters (standoff height, screw hole
+diameter, board clearances) live in `baseplate-common.scad` — adjust there
+if your printer tolerances differ.
+
+Print flat side down, no supports, 0.2mm layer height. Use M3 or 4-40
+self-tapping screws for the standoffs.
+
 ## Repo layout
 
 ```
@@ -320,6 +347,10 @@ resort.
 │   ├── status_led.{c,h}         # WS2812 RGB status LED (WiFi state, OTA progress)
 │   ├── reset_btn_sm.{c,h}       # pure-C debounce + hold-threshold state machine
 │   └── reset_button.{c,h}       # FreeRTOS task: poll BOOT pin, clear wifi on hold
+├── enclosure/                   # 3D-printable mounting hardware (OpenSCAD)
+│   ├── baseplate-common.scad    # shared dimensions, standoff/holder modules
+│   ├── baseplate-thingplus.scad # baseplate for Thing Plus WROOM or C5 + 2 relays
+│   └── baseplate-xiao.scad     # baseplate for XIAO ESP32-C3 + 2 relays
 ├── scripts/
 │   └── idf.sh                   # thin wrapper: sources export.sh, forwards to idf.py
 ├── test/
