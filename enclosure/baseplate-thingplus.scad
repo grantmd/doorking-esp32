@@ -48,10 +48,29 @@ translate([plate_w, plate_l / 2, 0])
 
 // -----------------------------------------------------------------------
 // Thing Plus standoffs (2 mounting holes near USB end)
+// The board is flipped 180° so the USB-C port faces away from the
+// relays (toward the top of the plate) for easy cable access.
+// Original hole positions are near y=0 (USB end); after flipping,
+// they land near the top of the board footprint.
 // -----------------------------------------------------------------------
 
+tp_hole1_flipped = [tp_pcb_w - tp_hole1[0], tp_pcb_l - tp_hole1[1]];
+tp_hole2_flipped = [tp_pcb_w - tp_hole2[0], tp_pcb_l - tp_hole2[1]];
+
 translate([tp_x, tp_y, 0])
-    standoffs_at([tp_hole1, tp_hole2]);
+    standoffs_at([tp_hole1_flipped, tp_hole2_flipped]);
+
+// Support posts at the radio end (no screw holes on the PCB here,
+// just solid posts to prevent the board from flexing when pressed).
+// Positioned to match the same X as the mounting holes, at the
+// opposite end of the board.
+tp_support1 = [tp_hole1[0], tp_hole1[1]];  // after flip: near tp_y
+tp_support2 = [tp_hole2[0], tp_hole2[1]];  // after flip: near tp_y
+
+translate([tp_x + tp_support1[0], tp_y + tp_support1[1], plate_thickness])
+    support_post();
+translate([tp_x + tp_support2[0], tp_y + tp_support2[1], plate_thickness])
+    support_post();
 
 // -----------------------------------------------------------------------
 // Relay 1 standoffs (4 corners)
@@ -73,7 +92,7 @@ translate([relay2_x, relay_y, 0])
 
 label_depth = 0.6;
 
-translate([tp_x + tp_pcb_w/2, tp_y + tp_pcb_l + 2, plate_thickness - label_depth])
+translate([tp_x + tp_pcb_w/2, tp_y - 3, plate_thickness - label_depth])
     linear_extrude(label_depth + 0.1)
         text("ESP32", size=3, halign="center", font="Liberation Sans:style=Bold");
 

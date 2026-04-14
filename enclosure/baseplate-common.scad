@@ -76,6 +76,11 @@ xiao_pcb_h   = 1.2;           // PCB thickness for clip holder
 // Modules
 // -----------------------------------------------------------------------
 
+// A solid support post (no screw hole) to prevent board flex.
+module support_post(h=standoff_h, od=standoff_od) {
+    cylinder(h=h, d=od, $fn=24);
+}
+
 // A single standoff post with a screw hole.
 module standoff(h=standoff_h, od=standoff_od, id=screw_hole_d) {
     difference() {
