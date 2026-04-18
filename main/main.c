@@ -93,16 +93,16 @@ void app_main(void)
     wifi_start(&cfg);
     reset_button_start();
 
-    // Bring up the I²C bus and scan for devices. The bus handle will
-    // later be passed to relay_i2c for Qwiic Relay control; for now
-    // the scan just logs what's connected for diagnostic purposes.
+    // Bring up the I²C bus and scan for devices. The bus handle is
+    // passed to http_api_start so the /i2c/scan and /i2c/relay-address
+    // diagnostic endpoints can share it; relay_i2c.c will register its
+    // device handles on the same bus once it lands.
     i2c_master_bus_handle_t i2c_bus = i2c_bus_init_and_scan();
-    (void)i2c_bus;  // unused until relay_i2c.c lands
 
     // Start the main HTTP API and mDNS. Only useful in STA mode (the
     // provisioning server in wifi.c handles AP mode).
     if (config_has_wifi(&cfg)) {
-        http_api_start(&cfg, &sm);
+        http_api_start(&cfg, &sm, i2c_bus);
 
         // Advertise as <hostname>.local on the LAN so the user (and
         // Homebridge) can reach the device without knowing its DHCP IP.

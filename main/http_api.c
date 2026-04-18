@@ -1,5 +1,6 @@
 #include "http_api.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_app_desc.h"
@@ -12,6 +13,7 @@
 
 #include "config.h"
 #include "gate_sm.h"
+#include "i2c_bus.h"
 #include "log_buffer.h"
 #include "ota.h"
 
@@ -27,6 +29,11 @@ static char s_auth_token[DOORKING_AUTH_TOKEN_MAX_LEN + 1];
 // from the httpd task on /status, /open, /close requests. See the
 // concurrency note in http_api.h.
 static gate_sm_t *s_gate_sm = NULL;
+
+// I²C bus handle, set by http_api_start. Used by the /i2c/* diagnostic
+// and one-shot device-config endpoints. NULL if the caller didn't
+// bring one up (e.g. a future host-side test harness).
+static i2c_master_bus_handle_t s_i2c_bus = NULL;
 
 // ---------------------------------------------------------------------------
 // Bearer-token auth helper
@@ -414,10 +421,161 @@ static esp_err_t handle_reboot(httpd_req_t *req)
 }
 
 // ---------------------------------------------------------------------------
+// GET /i2c/scan — enumerate ACK'd I²C addresses
+// ---------------------------------------------------------------------------
+
+static esp_err_t handle_i2c_scan(httpd_req_t *req)
+{
+    if (!require_auth(req)) {
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+
+    if (!s_i2c_bus) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_sendstr(req, "{\"error\":\"i2c bus not initialized\"}");
+    }
+
+    // 16 devices is plenty — the 7-bit address space on a gate-bridge
+    // board realistically sees <4 (fuel gauge + 2 relays + headroom).
+    i2c_bus_scan_entry_t entries[16];
+    size_t found = i2c_bus_scan(s_i2c_bus, entries, sizeof(entries) / sizeof(entries[0]));
+    size_t reported = (found > sizeof(entries) / sizeof(entries[0]))
+                    ? sizeof(entries) / sizeof(entries[0]) : found;
+
+    // 16 entries × ~60 bytes of JSON each + wrapper → 1 KB is plenty.
+    char body[1200];
+    int n = snprintf(body, sizeof(body), "{\"count\":%u,\"devices\":[", (unsigned)found);
+    for (size_t i = 0; i < reported && n < (int)sizeof(body); i++) {
+        n += snprintf(body + n, sizeof(body) - n,
+                      "%s{\"addr\":\"0x%02x\",\"label\":\"%s\"}",
+                      i ? "," : "",
+                      entries[i].addr,
+                      entries[i].label);
+    }
+    if (n < (int)sizeof(body)) {
+        snprintf(body + n, sizeof(body) - n, "]}");
+    }
+
+    return httpd_resp_sendstr(req, body);
+}
+
+// ---------------------------------------------------------------------------
+// POST /i2c/relay-address — reassign a Qwiic Single Relay's I²C address
+//
+// Query: ?from=0x18&to=0x19 (hex accepted with or without 0x prefix)
+// Sends the SparkFun SINGLE_CHANGE_ADDRESS command (register 0x03,
+// payload = new address). The relay persists the new address to
+// onboard EEPROM and responds at the new address immediately.
+// ---------------------------------------------------------------------------
+
+// Parse a hex or decimal address from a query-string value. Returns
+// true on success and writes the parsed byte to *out. Accepts "0x18",
+// "18", "24". Rejects anything outside [0x07, 0x78] — the valid I²C
+// range the SparkFun firmware enforces.
+static bool parse_i2c_addr(const char *s, uint8_t *out)
+{
+    if (!s || !*s) {
+        return false;
+    }
+    char *end = NULL;
+    long v = strtol(s, &end, 0);  // base 0: honors 0x prefix
+    if (end == s || *end != '\0') {
+        return false;
+    }
+    if (v < 0x07 || v > 0x78) {
+        return false;
+    }
+    *out = (uint8_t)v;
+    return true;
+}
+
+static esp_err_t handle_i2c_relay_address(httpd_req_t *req)
+{
+    if (!require_auth(req)) {
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+
+    if (!s_i2c_bus) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_sendstr(req, "{\"error\":\"i2c bus not initialized\"}");
+    }
+
+    // Pull ?from=...&to=... out of the query string.
+    char query[64];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_sendstr(req, "{\"error\":\"missing ?from=0xNN&to=0xNN\"}");
+    }
+
+    char from_s[8] = {0};
+    char to_s[8]   = {0};
+    if (httpd_query_key_value(query, "from", from_s, sizeof(from_s)) != ESP_OK ||
+        httpd_query_key_value(query, "to",   to_s,   sizeof(to_s))   != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_sendstr(req, "{\"error\":\"missing ?from=0xNN&to=0xNN\"}");
+    }
+
+    uint8_t from_addr = 0, to_addr = 0;
+    if (!parse_i2c_addr(from_s, &from_addr) || !parse_i2c_addr(to_s, &to_addr)) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_sendstr(req, "{\"error\":\"addresses must be in 0x07..0x78\"}");
+    }
+
+    // Sanity-check: the source address must currently ACK. If it
+    // doesn't, we'd be blasting the command into the void — or worse,
+    // into the wrong device — so fail loudly.
+    if (i2c_master_probe(s_i2c_bus, from_addr, 50) != ESP_OK) {
+        httpd_resp_set_status(req, "404 Not Found");
+        char body[96];
+        snprintf(body, sizeof(body),
+                 "{\"error\":\"no device at 0x%02x\"}", from_addr);
+        return httpd_resp_sendstr(req, body);
+    }
+
+    esp_err_t err = i2c_bus_relay_change_address(s_i2c_bus, from_addr, to_addr);
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        char body[128];
+        snprintf(body, sizeof(body),
+                 "{\"error\":\"change-address transmit failed\",\"code\":\"%s\"}",
+                 esp_err_to_name(err));
+        return httpd_resp_sendstr(req, body);
+    }
+
+    // Verify: the relay should now ACK at the new address and no longer
+    // at the old one. The ATtiny's EEPROM write plus the re-init on the
+    // new address takes long enough that probing too soon hits a
+    // hardware timeout — 50 ms was empirically too short, 250 ms is
+    // comfortable without making the endpoint feel sluggish.
+    vTaskDelay(pdMS_TO_TICKS(250));
+    bool new_ok   = (i2c_master_probe(s_i2c_bus, to_addr,   100) == ESP_OK);
+    bool old_gone = (i2c_master_probe(s_i2c_bus, from_addr, 100) != ESP_OK);
+
+    ESP_LOGI(TAG, "relay address reassign 0x%02x -> 0x%02x: new_ok=%d old_gone=%d",
+             from_addr, to_addr, new_ok, old_gone);
+
+    char body[160];
+    snprintf(body, sizeof(body),
+             "{\"ok\":%s,\"from\":\"0x%02x\",\"to\":\"0x%02x\","
+             "\"new_ack\":%s,\"old_gone\":%s}",
+             (new_ok && old_gone) ? "true" : "false",
+             from_addr, to_addr,
+             new_ok ? "true" : "false",
+             old_gone ? "true" : "false");
+    return httpd_resp_sendstr(req, body);
+}
+
+// ---------------------------------------------------------------------------
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
-void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm)
+void http_api_start(const doorking_config_t *cfg,
+                    gate_sm_t *sm,
+                    i2c_master_bus_handle_t i2c_bus)
 {
     if (s_httpd) {
         return;  // already running
@@ -430,10 +588,13 @@ void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm)
     // Stash the gate state machine pointer for /status, /open, /close.
     s_gate_sm = sm;
 
+    // Stash the I²C bus handle for the /i2c/* diagnostic endpoints.
+    s_i2c_bus = i2c_bus;
+
     httpd_config_t http_cfg = HTTPD_DEFAULT_CONFIG();
     http_cfg.server_port = 80;
     http_cfg.stack_size  = 10240;  // bumped from 8192 for OTA write path
-    http_cfg.max_uri_handlers = 12;
+    http_cfg.max_uri_handlers = 14;
 
     esp_err_t err = httpd_start(&s_httpd, &http_cfg);
     if (err != ESP_OK) {
@@ -511,6 +672,20 @@ void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm)
     };
     httpd_register_uri_handler(s_httpd, &reboot);
 
-    ESP_LOGI(TAG, "http api listening on port %d (/ /health /logs /status /open /close /update /update/pull /reboot)",
+    const httpd_uri_t i2c_scan = {
+        .uri     = "/i2c/scan",
+        .method  = HTTP_GET,
+        .handler = handle_i2c_scan,
+    };
+    httpd_register_uri_handler(s_httpd, &i2c_scan);
+
+    const httpd_uri_t i2c_relay_addr = {
+        .uri     = "/i2c/relay-address",
+        .method  = HTTP_POST,
+        .handler = handle_i2c_relay_address,
+    };
+    httpd_register_uri_handler(s_httpd, &i2c_relay_addr);
+
+    ESP_LOGI(TAG, "http api listening on port %d (/ /health /logs /status /open /close /update /update/pull /reboot /i2c/scan /i2c/relay-address)",
              http_cfg.server_port);
 }

@@ -6,20 +6,23 @@
 // is up.
 //
 // Endpoints:
-//   GET  /            -> dashboard HTML                        (no auth)
-//   GET  /health      -> liveness + version JSON               (no auth)
-//   GET  /logs        -> ring buffer text/plain dump           (bearer auth)
-//   GET  /status      -> gate state + last command JSON        (bearer auth)
-//   POST /open        -> command gate open, pulse OPEN relay   (bearer auth)
-//   POST /close       -> command gate close, pulse CLOSE relay (bearer auth)
-//   POST /update       -> push OTA firmware upload              (bearer auth)
-//   POST /update/check -> check GitHub for new release          (bearer auth)
-//   POST /update/pull  -> trigger pull OTA from GitHub          (bearer auth)
-//   POST /reboot       -> restart the device                    (bearer auth)
+//   GET  /                    -> dashboard HTML                        (no auth)
+//   GET  /health              -> liveness + version JSON               (no auth)
+//   GET  /logs                -> ring buffer text/plain dump           (bearer auth)
+//   GET  /status              -> gate state + last command JSON        (bearer auth)
+//   POST /open                -> command gate open, pulse OPEN relay   (bearer auth)
+//   POST /close               -> command gate close, pulse CLOSE relay (bearer auth)
+//   POST /update              -> push OTA firmware upload              (bearer auth)
+//   POST /update/check        -> check GitHub for new release          (bearer auth)
+//   POST /update/pull         -> trigger pull OTA from GitHub          (bearer auth)
+//   POST /reboot              -> restart the device                    (bearer auth)
+//   GET  /i2c/scan            -> JSON list of ACK'd I²C addresses      (bearer auth)
+//   POST /i2c/relay-address   -> reassign Qwiic Single Relay address   (bearer auth)
 
 #pragma once
 
 #include "config.h"
+#include "driver/i2c_master.h"
 #include "gate_sm.h"
 
 #ifdef __cplusplus
@@ -37,7 +40,9 @@ extern "C" {
 // chip (WROOM) with sub-microsecond state assignments and requests
 // arriving at most a few times per day, the data race is benign. Add a
 // mutex here when relay pulse timing makes the race window relevant.
-void http_api_start(const doorking_config_t *cfg, gate_sm_t *sm);
+void http_api_start(const doorking_config_t *cfg,
+                    gate_sm_t *sm,
+                    i2c_master_bus_handle_t i2c_bus);
 
 #ifdef __cplusplus
 }
