@@ -124,6 +124,15 @@ OFF so the onboard dry relay energises when the gate is fully open. Verify
 the relay shorting bar is on the **NO** pins. The firmware reads: contact
 closed → GPIO pulled to common → status = `OPEN`.
 
+> **Before you flip SW1-4 and SW1-5:** check pins 15-16 on the DKS terminal
+> strip for existing wires. SW1-4 and SW1-5 only change what condition
+> triggers that one relay — they don't affect safety features, the opener
+> logic, or any other DIP switch. But if a warning light, buzzer, or prior
+> automation is wired to 15-16 today, it will change behavior (e.g. a "gate
+> in motion" strobe would only light at full-open after the switch change).
+> If the terminals are empty, flipping these switches is a no-op for
+> everything already installed.
+
 **Safety rules** (non-negotiable):
 - Do not touch any UL 325 terminals (pins 1–10 on the UL 325 strip, photo
   beams, reversing edges, entrapment alarm).
