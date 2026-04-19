@@ -52,9 +52,11 @@ so far — the third is waiting on shipping.
 | AP-mode provisioning web form + bearer token mint + reboot | done |
 | Factory reset via BOOT-button hold (pure-C sm + 7 host tests) | done |
 | HTTP API: `GET /health`, `GET /logs`, `GET /status`, `POST /open`, `POST /close` | done |
+| HTTP API: `GET /i2c/scan`, `POST /i2c/relay-address` for bus diagnostics / one-shot device config | done |
 | 16 KB RAM log ring buffer via `esp_log_set_vprintf` hook + `GET /logs` | done |
 | mDNS `<hostname>.local` (default `doorking.local`) | done |
 | I²C master bus init + boot-time device scan | done |
+| Qwiic Single Relay driver, wired into `/open` + `/close` | done |
 | WS2812 RGB status LED (WiFi state + OTA progress) | done |
 | OTA updates — push (`POST /update`) + pull (GitHub Releases auto-check) | done |
 | Rollback protection (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` + 120 s WiFi watchdog) | done |
@@ -62,12 +64,12 @@ so far — the third is waiting on shipping.
 | `POST /reboot` remote restart endpoint | done |
 | `POST /update/check` on-demand GitHub release check | done |
 | `esp32c3` build-verified and hardware-verified (XIAO) | done |
-| `esp32` build-verified and hardware-verified (Thing Plus WROOM) | done |
-| `esp32c5` build-verified, hardware pending | in progress |
+| `esp32` build-verified and hardware-verified (Thing Plus WROOM, both relays) | done |
+| `esp32c5` build-verified, partially hardware-verified (WiFi + provisioning OK; Qwiic I²C needs LP\_I²C driver — deferred) | in progress |
 | Size-optimised `-Os` build + `TWO_OTA_LARGE` partition (1700 KB slots) | done |
 | `scripts/idf.sh` wrapper for sandbox-friendly invocations | done |
 | GitHub Actions matrix CI (3 targets) + tag-triggered releases with OTA assets | done |
-| Qwiic Relay I²C driver (relay pulse stubs in `/open` + `/close`) | pending |
+| 4602-010 status GPIO (pin 15–16 "fully open" sense) wiring | pending |
 | Homebridge plugin config | pending |
 
 Current binary sizes (ESP-IDF v5.5.4, `-Os`, `TWO_OTA_LARGE` 1700 KB slots):
@@ -90,7 +92,7 @@ a fraction of a second with no ESP-IDF toolchain required:
 | Qty | Part | Notes |
 |---|---|---|
 | 1 | Any supported dev board | See "Supported targets" above |
-| 2 | [SparkFun Qwiic Single Relay (COM-15093)](https://www.sparkfun.com/products/15093) | Address `0x18` (default) and `0x19` (jumper or runtime command). Omron G6K-2F-Y relay, 5.5 A @ 240 VAC — overkill for 24 V DC dry-contact switching, which is what we want |
+| 2 | [SparkFun Qwiic Single Relay (COM-15093)](https://www.sparkfun.com/products/15093) | Both ship at `0x18`. Reassign one to `0x19` at runtime via `POST /i2c/relay-address` (see "Reassigning relay addresses" below) — the board has no physical jumper for this, only a solder pad. Omron G6K-2F-Y relay, 5.5 A @ 240 VAC — overkill for 24 V DC dry-contact switching, which is what we want |
 | 1–2 | [Qwiic cable](https://www.sparkfun.com/products/14426) | One daisy-chains the two relays; if your dev board has a Qwiic jack, a second runs from the board to the first relay. For the XIAO ESP32-C3 (no Qwiic jack), a [Qwiic-to-pigtail adapter](https://www.sparkfun.com/products/14425) bridges to the D4/D5 I²C pins |
 | 1 | 5 V USB power brick | Powers the dev board from the 115 VAC convenience outlet inside the DKS operator enclosure |
 | 1 | USB-C data cable | Flashing, console, and power |
@@ -121,6 +123,28 @@ closed → GPIO pulled to common → status = `OPEN`.
   entrapment alarm.
 - Mount the dev board and relays inside the operator enclosure or in an
   adjacent weatherproof enclosure.
+
+### Reassigning relay addresses
+
+Both Qwiic Single Relays leave the factory at I²C address `0x18`, and the
+firmware expects one at `0x18` (OPEN) and one at `0x19` (CLOSE). Reassign
+one of them at runtime, with only that relay plugged into the Qwiic bus:
+
+```
+# confirm the bus state
+curl -s -H "Authorization: Bearer <token>" http://doorking.local/i2c/scan
+
+# move the plugged-in relay to 0x19
+curl -s -X POST -H "Authorization: Bearer <token>" \
+  "http://doorking.local/i2c/relay-address?from=0x18&to=0x19"
+```
+
+The endpoint writes SparkFun's `SINGLE_CHANGE_ADDRESS` command (register
+`0x03`, payload = new address), which the relay persists to on-board
+EEPROM. Then plug in the second relay — it comes up at the default `0x18`
+and the two coexist. The relay addresses the firmware drives are
+NVS-backed (`relay_open_addr`, `relay_close_addr`) so you can flip the
+convention without re-flashing.
 
 ## Software prerequisites (macOS)
 
@@ -340,10 +364,12 @@ self-tapping screws for the standoffs.
 │   ├── config.{c,h}             # NVS-backed persistent settings
 │   ├── wifi.{c,h}               # STA + AP-provisioning + provisioning HTTP server
 │   ├── http_api.{c,h}           # REST API + dashboard (/ /health /logs /status /open /close
-│   │                            #   /update /update/check /update/pull /reboot)
+│   │                            #   /update /update/check /update/pull /reboot
+│   │                            #   /i2c/scan /i2c/relay-address)
 │   ├── ota.{c,h}                # OTA: push upload, GitHub pull check, rollback confirmation
 │   ├── log_buffer.{c,h}         # 16 KB RAM ring buffer, tees ESP_LOGx to buffer + UART
-│   ├── i2c_bus.{c,h}            # I²C master init + boot-time device scan
+│   ├── i2c_bus.{c,h}            # I²C master init + boot-time scan + address-change helper
+│   ├── relay_i2c.{c,h}          # Qwiic Single Relay driver (pulse_open / pulse_close)
 │   ├── status_led.{c,h}         # WS2812 RGB status LED (WiFi state, OTA progress)
 │   ├── reset_btn_sm.{c,h}       # pure-C debounce + hold-threshold state machine
 │   └── reset_button.{c,h}       # FreeRTOS task: poll BOOT pin, clear wifi on hold
