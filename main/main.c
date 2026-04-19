@@ -33,6 +33,7 @@
 #include "relay_i2c.h"
 #include "reset_button.h"
 #include "ota.h"
+#include "status_input.h"
 #include "status_led.h"
 #include "wifi.h"
 
@@ -93,6 +94,7 @@ void app_main(void)
     status_led_init();
     wifi_start(&cfg);
     reset_button_start();
+    status_input_start(&sm);
 
     // Bring up the I²C bus and scan for devices. The bus handle is
     // shared: relay_i2c registers OPEN/CLOSE device handles on it,

@@ -69,7 +69,7 @@ so far — the third is waiting on shipping.
 | Size-optimised `-Os` build + `TWO_OTA_LARGE` partition (1700 KB slots) | done |
 | `scripts/idf.sh` wrapper for sandbox-friendly invocations | done |
 | GitHub Actions matrix CI (3 targets) + tag-triggered releases with OTA assets | done |
-| 4602-010 status GPIO (pin 15–16 "fully open" sense) wiring | pending |
+| 4602-010 status GPIO (pin 15–16 "fully open" sense) — debounced input + `gate_sm` edge feed | done (firmware; awaiting in-field verification) |
 | Homebridge plugin config | pending |
 
 Current binary sizes (ESP-IDF v5.5.4, `-Os`, `TWO_OTA_LARGE` 1700 KB slots):
@@ -109,7 +109,15 @@ dev board you picked.
 |---|---|---|
 | Relay `0x18` COM + NO | **4** ↔ **1** (Low Voltage Common) | Full Open — momentary short to common |
 | Relay `0x19` COM + NO | **9** ↔ **18** (Low Voltage Common) | 3-Button Close — momentary short to common |
-| Dev-board GPIO input | **15** ↔ **18** | 4602-010 configurable dry relay, set to "fully open" via SW1 switches 4=OFF 5=OFF |
+| Dev-board `STATUS_INPUT_GPIO` + GND | **15** ↔ **18** | 4602-010 configurable dry relay, set to "fully open" via SW1 switches 4=OFF 5=OFF |
+
+Per-target `STATUS_INPUT_GPIO` (see `main/board.h`):
+
+| Target | Board pad / pin | ESP32 GPIO |
+|---|---|---|
+| `esp32c3` (XIAO) | D2 | GPIO4 |
+| `esp32` (Thing Plus WROOM) | `13` | GPIO13 |
+| `esp32c5` (Thing Plus C5) | `10` | GPIO10 |
 
 **DIP switch setup on the 4602-010**: set SW1 switch 4 = OFF and switch 5 =
 OFF so the onboard dry relay energises when the gate is fully open. Verify
@@ -370,6 +378,7 @@ self-tapping screws for the standoffs.
 │   ├── log_buffer.{c,h}         # 16 KB RAM ring buffer, tees ESP_LOGx to buffer + UART
 │   ├── i2c_bus.{c,h}            # I²C master init + boot-time scan + address-change helper
 │   ├── relay_i2c.{c,h}          # Qwiic Single Relay driver (pulse_open / pulse_close)
+│   ├── status_input.{c,h}       # 4602-010 "fully open" GPIO input: debounce + feed gate_sm
 │   ├── status_led.{c,h}         # WS2812 RGB status LED (WiFi state, OTA progress)
 │   ├── reset_btn_sm.{c,h}       # pure-C debounce + hold-threshold state machine
 │   └── reset_button.{c,h}       # FreeRTOS task: poll BOOT pin, clear wifi on hold

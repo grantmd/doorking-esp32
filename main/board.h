@@ -46,6 +46,11 @@
     #define I2C_MASTER_SDA_GPIO 6   /* XIAO pad D4 */
     #define I2C_MASTER_SCL_GPIO 7   /* XIAO pad D5 */
 
+    // Input from the 4602-010 configurable dry relay (pin 15 ↔ 18 with
+    // DIP switch 4=OFF, 5=OFF = "fully open"). Contact closed pulls the
+    // pin LOW via internal pull-up → gate is fully open.
+    #define STATUS_INPUT_GPIO   4   /* XIAO pad D2 */
+
     // No user-controllable LED on the XIAO (only power/charge LEDs).
     // STATUS_LED_GPIO is deliberately not defined — the status_led
     // module compiles as no-ops for this target.
@@ -78,6 +83,11 @@
     #define I2C_MASTER_SDA_GPIO 21
     #define I2C_MASTER_SCL_GPIO 22
 
+    // Input from the 4602-010 configurable dry relay (pin 15 ↔ 18 with
+    // DIP switch 4=OFF, 5=OFF = "fully open"). Contact closed pulls the
+    // pin LOW via internal pull-up → gate is fully open.
+    #define STATUS_INPUT_GPIO   13
+
     // WS2812C (NeoPixel) RGB status LED, active on GPIO2.
     #define STATUS_LED_GPIO     2
 
@@ -98,6 +108,11 @@
     // and also to the onboard Qwiic connector.
     #define I2C_MASTER_SDA_GPIO 6
     #define I2C_MASTER_SCL_GPIO 7
+
+    // Input from the 4602-010 configurable dry relay (pin 15 ↔ 18 with
+    // DIP switch 4=OFF, 5=OFF = "fully open"). Contact closed pulls the
+    // pin LOW via internal pull-up → gate is fully open.
+    #define STATUS_INPUT_GPIO   10
 
     // WS2812 RGB status LED, active on GPIO27 (via the RGB solder
     // jumper which is closed by default).
