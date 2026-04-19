@@ -16,6 +16,7 @@
 #include "i2c_bus.h"
 #include "log_buffer.h"
 #include "ota.h"
+#include "relay_i2c.h"
 
 static const char *TAG = "http_api";
 
@@ -180,12 +181,19 @@ static esp_err_t handle_open(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
 
     switch (result) {
-    case GATE_CMD_RESULT_ACCEPTED:
-        // TODO: pulse the OPEN relay here once relay_i2c.c lands.
-        // For now the state machine transitions but no physical relay
-        // fires — testable end-to-end via /status without hardware.
-        ESP_LOGI(TAG, "POST /open: accepted (relay pulse TODO)");
+    case GATE_CMD_RESULT_ACCEPTED: {
+        ESP_LOGI(TAG, "POST /open: accepted, pulsing OPEN relay");
+        esp_err_t err = relay_i2c_pulse_open();
+        if (err != ESP_OK) {
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            char body[128];
+            snprintf(body, sizeof(body),
+                     "{\"error\":\"relay pulse failed\",\"code\":\"%s\"}",
+                     esp_err_to_name(err));
+            return httpd_resp_sendstr(req, body);
+        }
         return httpd_resp_sendstr(req, "{\"result\":\"accepted\"}");
+    }
 
     case GATE_CMD_RESULT_IDEMPOTENT:
         ESP_LOGI(TAG, "POST /open: idempotent (already open/opening)");
@@ -214,10 +222,19 @@ static esp_err_t handle_close(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
 
     switch (result) {
-    case GATE_CMD_RESULT_ACCEPTED:
-        // TODO: pulse the CLOSE relay here once relay_i2c.c lands.
-        ESP_LOGI(TAG, "POST /close: accepted (relay pulse TODO)");
+    case GATE_CMD_RESULT_ACCEPTED: {
+        ESP_LOGI(TAG, "POST /close: accepted, pulsing CLOSE relay");
+        esp_err_t err = relay_i2c_pulse_close();
+        if (err != ESP_OK) {
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            char body[128];
+            snprintf(body, sizeof(body),
+                     "{\"error\":\"relay pulse failed\",\"code\":\"%s\"}",
+                     esp_err_to_name(err));
+            return httpd_resp_sendstr(req, body);
+        }
         return httpd_resp_sendstr(req, "{\"result\":\"accepted\"}");
+    }
 
     case GATE_CMD_RESULT_IDEMPOTENT:
         ESP_LOGI(TAG, "POST /close: idempotent (already closed/closing)");

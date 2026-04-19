@@ -30,6 +30,7 @@
 #include "http_api.h"
 #include "i2c_bus.h"
 #include "log_buffer.h"
+#include "relay_i2c.h"
 #include "reset_button.h"
 #include "ota.h"
 #include "status_led.h"
@@ -94,10 +95,19 @@ void app_main(void)
     reset_button_start();
 
     // Bring up the I²C bus and scan for devices. The bus handle is
-    // passed to http_api_start so the /i2c/scan and /i2c/relay-address
-    // diagnostic endpoints can share it; relay_i2c.c will register its
-    // device handles on the same bus once it lands.
+    // shared: relay_i2c registers OPEN/CLOSE device handles on it,
+    // and http_api uses it for the /i2c/scan + /i2c/relay-address
+    // diagnostic endpoints.
     i2c_master_bus_handle_t i2c_bus = i2c_bus_init_and_scan();
+
+    const relay_i2c_config_t relay_cfg = {
+        .bus        = i2c_bus,
+        .open_addr  = cfg.relay_open_addr,
+        .close_addr = cfg.relay_close_addr,
+        .pulse_ms   = cfg.pulse_ms,
+    };
+    // A missing relay at boot is logged but not fatal; see relay_i2c.h.
+    (void)relay_i2c_init(&relay_cfg);
 
     // Start the main HTTP API and mDNS. Only useful in STA mode (the
     // provisioning server in wifi.c handles AP mode).

@@ -53,6 +53,12 @@ typedef struct {
     uint8_t  ota_auto_check;       // 1 = poll GitHub for updates (default)
     uint8_t  ota_auto_install;     // 1 = auto-install + reboot (default 0)
     uint32_t ota_check_interval_s; // seconds between checks (default 21600 = 6 h)
+
+    // Qwiic Single Relay I²C addresses. Defaults match the "one stock
+    // relay + one reassigned to the alt address" convention documented
+    // in README / /i2c/relay-address. Both must be in 0x07..0x78.
+    uint8_t  relay_open_addr;      // default 0x18
+    uint8_t  relay_close_addr;     // default 0x19
 } doorking_config_t;
 
 // Populate cfg with compile-time defaults. Does not touch NVS.

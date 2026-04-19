@@ -22,6 +22,8 @@ static const char *KEY_HOSTNAME    = "hostname";
 static const char *KEY_OTA_CHECK   = "ota_check";
 static const char *KEY_OTA_INSTALL = "ota_install";
 static const char *KEY_OTA_INTV    = "ota_intv";
+static const char *KEY_RELAY_OPEN  = "relay_open";
+static const char *KEY_RELAY_CLOSE = "relay_close";
 
 void config_defaults(doorking_config_t *cfg)
 {
@@ -33,6 +35,8 @@ void config_defaults(doorking_config_t *cfg)
     cfg->ota_auto_check       = 1;      // poll GitHub by default
     cfg->ota_auto_install     = 0;      // check-only; user triggers install
     cfg->ota_check_interval_s = 21600;  // 6 hours
+    cfg->relay_open_addr      = 0x18;   // stock Qwiic Single Relay address
+    cfg->relay_close_addr     = 0x19;   // second relay, reassigned via /i2c/relay-address
 }
 
 // Load a string NVS key into dst, leaving dst unchanged on any error
@@ -96,6 +100,9 @@ esp_err_t config_load(doorking_config_t *cfg)
     load_u8(nvs,  KEY_OTA_INSTALL, &cfg->ota_auto_install);
     load_u32(nvs, KEY_OTA_INTV,    &cfg->ota_check_interval_s);
 
+    load_u8(nvs,  KEY_RELAY_OPEN,  &cfg->relay_open_addr);
+    load_u8(nvs,  KEY_RELAY_CLOSE, &cfg->relay_close_addr);
+
     nvs_close(nvs);
     return ESP_OK;
 }
@@ -128,6 +135,8 @@ esp_err_t config_save(const doorking_config_t *cfg)
     SAVE_OR_FAIL(nvs_set_u8(nvs,  KEY_OTA_CHECK,   cfg->ota_auto_check));
     SAVE_OR_FAIL(nvs_set_u8(nvs,  KEY_OTA_INSTALL, cfg->ota_auto_install));
     SAVE_OR_FAIL(nvs_set_u32(nvs, KEY_OTA_INTV,    cfg->ota_check_interval_s));
+    SAVE_OR_FAIL(nvs_set_u8(nvs,  KEY_RELAY_OPEN,  cfg->relay_open_addr));
+    SAVE_OR_FAIL(nvs_set_u8(nvs,  KEY_RELAY_CLOSE, cfg->relay_close_addr));
 
     SAVE_OR_FAIL(nvs_commit(nvs));
     nvs_close(nvs);
@@ -190,4 +199,6 @@ void config_log(const doorking_config_t *cfg)
              (unsigned)cfg->ota_auto_check,
              (unsigned)cfg->ota_auto_install,
              (unsigned)cfg->ota_check_interval_s);
+    ESP_LOGI(TAG, "config: relay_open=0x%02x relay_close=0x%02x",
+             cfg->relay_open_addr, cfg->relay_close_addr);
 }
