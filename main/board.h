@@ -86,7 +86,13 @@
     // Input from the 4602-010 configurable dry relay (pin 15 ↔ 18 with
     // DIP switch 4=OFF, 5=OFF = "fully open"). Contact closed pulls the
     // pin LOW via internal pull-up → gate is fully open.
-    #define STATUS_INPUT_GPIO   13
+    //
+    // GOTCHA: do NOT use GPIO13 here — the Thing Plus WROOM wires a
+    // blue STAT LED to GPIO13 through a hard pull-down, which fights
+    // the internal pull-up and produces false-LOW readings. GPIO27 is
+    // a clean bidirectional pin with no onboard peripheral or
+    // strapping role.
+    #define STATUS_INPUT_GPIO   27
 
     // WS2812C (NeoPixel) RGB status LED, active on GPIO2.
     #define STATUS_LED_GPIO     2

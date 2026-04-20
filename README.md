@@ -116,7 +116,7 @@ Per-target `STATUS_INPUT_GPIO` (see `main/board.h`):
 | Target | Board pad / pin | ESP32 GPIO |
 |---|---|---|
 | `esp32c3` (XIAO) | D2 | GPIO4 |
-| `esp32` (Thing Plus WROOM) | `13` | GPIO13 |
+| `esp32` (Thing Plus WROOM) | `27` | GPIO27 |
 | `esp32c5` (Thing Plus C5) | `10` | GPIO10 |
 
 **DIP switch setup on the 4602-010**: set SW1 switch 4 = OFF and switch 5 =
