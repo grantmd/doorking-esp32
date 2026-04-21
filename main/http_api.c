@@ -263,8 +263,7 @@ static esp_err_t handle_dashboard(httpd_req_t *req)
     if (update_ver) {
         snprintf(update_html, sizeof(update_html),
             "<p><strong>Update available: %s</strong></p>"
-            "<button class=\"btn\" onclick=\"authPost('/update/pull','Updating\\u2026',"
-            "'Downloading and flashing. Do not power off.')\">Update firmware</button>",
+            "<button class=\"btn\" onclick=\"doUpdate()\">Update firmware</button>",
             update_ver);
     } else {
         snprintf(update_html, sizeof(update_html),
@@ -273,7 +272,7 @@ static esp_err_t handle_dashboard(httpd_req_t *req)
 
     // The page is small enough to build in a single snprintf. The shared
     // JavaScript handles auth-prompted POST actions for all three buttons.
-    char body[3072];
+    char body[4096];
     snprintf(body, sizeof(body),
         "<!DOCTYPE html>\n"
         "<html lang=\"en\">\n"
@@ -305,41 +304,85 @@ static esp_err_t handle_dashboard(httpd_req_t *req)
         "%s\n"
         "<hr style=\"margin:1em 0;border:0;border-top:1px solid #ddd\">\n"
         "<button class=\"btn btn-secondary\" onclick=\"doCheck()\">Check for updates</button>"
-        "<button class=\"btn btn-secondary\" onclick=\"authPost('/reboot','Rebooting\\u2026')\">Reboot</button>"
+        "<button class=\"btn btn-secondary\" onclick=\"doReboot()\">Reboot</button>"
         "<p id=\"msg\" style=\"display:none;color:#666;font-size:.9em\"></p>\n"
         "<script>\n"
         "var tk=null;\n"
         "function getToken(){"
         "if(!tk){tk=prompt('Enter bearer token:');}"
         "return tk;}\n"
-        "function authPost(url,msgText){\n"
-        "if(!getToken())return;\n"
+        // Poll /update/status until the operation completes.
+        //   expectReboot=true  → a successful outcome will crash the poll
+        //                        connection (device reboots); treat that
+        //                        as success.
+        //   expectReboot=false → a successful outcome returns to 'idle';
+        //                        reload soon to pick up the new banner.
+        "function pollStatus(expectReboot){\n"
         "var m=document.getElementById('msg');\n"
-        "m.style.display='block';m.textContent=msgText;\n"
-        "fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+tk}})\n"
-        ".then(function(r){"
-        "if(r.status===401){tk=null;m.textContent='Invalid token.';return;}\n"
-        "return r.json();})\n"
+        "var iv=setInterval(function(){\n"
+        "fetch('/update/status')\n"
+        ".then(function(r){return r.json();})\n"
         ".then(function(d){\n"
-        "if(!d)return;\n"
-        "if(d.error){m.textContent='Error: '+d.error;}\n"
-        "else{m.textContent=msgText;}\n"
+        "if(d.state==='failed'){"
+        "clearInterval(iv);"
+        "m.textContent='Update failed: '+(d.error||'unknown error');"
+        "return;}\n"
+        "if(d.state==='idle'){"
+        "clearInterval(iv);"
+        "m.textContent='Done. Reloading\\u2026';"
+        "setTimeout(function(){location.reload();},1500);"
+        "return;}\n"
+        "if(d.state==='checking'){m.textContent='Checking for updates\\u2026';}\n"
+        "if(d.state==='downloading'){m.textContent='Downloading and flashing. Do not power off.';}\n"
+        "})\n"
+        ".catch(function(){"
+        // Connection lost. If we expected a reboot, that's success; wait
+        // for the device to come back. If not, surface the network error.
+        "clearInterval(iv);"
+        "if(expectReboot){"
+        "m.textContent='Device rebooting with new firmware\\u2026';"
+        "setTimeout(function(){location.reload();},15000);"
+        "}else{"
+        "m.textContent='Lost connection to device.';"
+        "}"
+        "});\n"
+        "},2000);\n"
+        "}\n"
+        "function doCheck(){\n"
+        "var m=document.getElementById('msg');\n"
+        "m.style.display='block';m.textContent='Checking for updates\\u2026';\n"
+        "fetch('/update/check',{method:'POST'})\n"
+        ".then(function(r){return r.json();})\n"
+        ".then(function(d){\n"
+        "if(d.error){m.textContent='Error: '+d.error;return;}\n"
+        "pollStatus(false);\n"
         "})\n"
         ".catch(function(e){m.textContent='Network error: '+e;});\n"
         "}\n"
-        "function doCheck(){\n"
+        "function doUpdate(){\n"
         "if(!getToken())return;\n"
         "var m=document.getElementById('msg');\n"
-        "m.style.display='block';m.textContent='Checking for updates\\u2026';\n"
-        "fetch('/update/check',{method:'POST',headers:{'Authorization':'Bearer '+tk}})\n"
+        "m.style.display='block';m.textContent='Starting update\\u2026';\n"
+        "fetch('/update/pull',{method:'POST',headers:{'Authorization':'Bearer '+tk}})\n"
         ".then(function(r){"
-        "if(r.status===401){tk=null;m.textContent='Invalid token.';return;}\n"
+        "if(r.status===401){tk=null;m.textContent='Invalid token.';return null;}\n"
         "return r.json();})\n"
         ".then(function(d){\n"
         "if(!d)return;\n"
         "if(d.error){m.textContent='Error: '+d.error;return;}\n"
-        "m.textContent='Check started. Reloading\\u2026';\n"
-        "setTimeout(function(){location.reload();},5000);\n"
+        "pollStatus(true);\n"
+        "})\n"
+        ".catch(function(e){m.textContent='Network error: '+e;});\n"
+        "}\n"
+        "function doReboot(){\n"
+        "if(!getToken())return;\n"
+        "var m=document.getElementById('msg');\n"
+        "m.style.display='block';m.textContent='Rebooting\\u2026';\n"
+        "fetch('/reboot',{method:'POST',headers:{'Authorization':'Bearer '+tk}})\n"
+        ".then(function(r){"
+        "if(r.status===401){tk=null;m.textContent='Invalid token.';return;}\n"
+        "m.textContent='Rebooting. Reloading in 10s\\u2026';"
+        "setTimeout(function(){location.reload();},10000);"
         "})\n"
         ".catch(function(e){m.textContent='Network error: '+e;});\n"
         "}\n"
@@ -389,15 +432,57 @@ static esp_err_t handle_pull_update(httpd_req_t *req)
 }
 
 // ---------------------------------------------------------------------------
-// POST /update/check — trigger an update check against GitHub
+// GET /update/status — current OTA operation state (no auth)
+//
+// The dashboard polls this while a check or update is running so the user
+// sees progress and errors instead of a page that looks like it's just
+// sitting there. Unauthenticated for the same reason as /update/check —
+// nothing sensitive here, and the version info is already public.
+// ---------------------------------------------------------------------------
+
+static esp_err_t handle_update_status(httpd_req_t *req)
+{
+    ota_state_t state = ota_get_state();
+    const char *err   = ota_get_last_error();
+
+    char body[192];
+    if (err[0]) {
+        // Escape quotes in the error message conservatively — our internal
+        // error strings never contain them, but be defensive.
+        char safe_err[96];
+        size_t j = 0;
+        for (size_t i = 0; err[i] && j + 2 < sizeof(safe_err); i++) {
+            if (err[i] == '"' || err[i] == '\\') {
+                safe_err[j++] = '\\';
+            }
+            safe_err[j++] = err[i];
+        }
+        safe_err[j] = '\0';
+        snprintf(body, sizeof(body),
+                 "{\"state\":\"%s\",\"error\":\"%s\"}",
+                 ota_state_name(state), safe_err);
+    } else {
+        snprintf(body, sizeof(body),
+                 "{\"state\":\"%s\",\"error\":null}",
+                 ota_state_name(state));
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, body);
+}
+
+// ---------------------------------------------------------------------------
+// POST /update/check — trigger an update check against GitHub (no auth)
+//
+// Left unauthenticated intentionally: the version info this resolves is
+// already exposed on GET / and GET /health, and the endpoint's only side
+// effect is a single outbound GitHub API call. ota_check_now has a
+// check-in-progress guard (ESP_ERR_INVALID_STATE) that limits the impact
+// of rapid-fire requests to a 409 reply — they don't pile up upstream.
 // ---------------------------------------------------------------------------
 
 static esp_err_t handle_check_update(httpd_req_t *req)
 {
-    if (!require_auth(req)) {
-        return ESP_OK;
-    }
-
     esp_err_t err = ota_check_now();
     httpd_resp_set_type(req, "application/json");
 
@@ -611,7 +696,7 @@ void http_api_start(const doorking_config_t *cfg,
     httpd_config_t http_cfg = HTTPD_DEFAULT_CONFIG();
     http_cfg.server_port = 80;
     http_cfg.stack_size  = 10240;  // bumped from 8192 for OTA write path
-    http_cfg.max_uri_handlers = 14;
+    http_cfg.max_uri_handlers = 15;
 
     esp_err_t err = httpd_start(&s_httpd, &http_cfg);
     if (err != ESP_OK) {
@@ -682,6 +767,13 @@ void http_api_start(const doorking_config_t *cfg,
     };
     httpd_register_uri_handler(s_httpd, &check);
 
+    const httpd_uri_t update_status = {
+        .uri     = "/update/status",
+        .method  = HTTP_GET,
+        .handler = handle_update_status,
+    };
+    httpd_register_uri_handler(s_httpd, &update_status);
+
     const httpd_uri_t reboot = {
         .uri     = "/reboot",
         .method  = HTTP_POST,
@@ -703,6 +795,6 @@ void http_api_start(const doorking_config_t *cfg,
     };
     httpd_register_uri_handler(s_httpd, &i2c_relay_addr);
 
-    ESP_LOGI(TAG, "http api listening on port %d (/ /health /logs /status /open /close /update /update/pull /reboot /i2c/scan /i2c/relay-address)",
+    ESP_LOGI(TAG, "http api listening on port %d (/ /health /logs /status /open /close /update /update/check /update/pull /update/status /reboot /i2c/scan /i2c/relay-address)",
              http_cfg.server_port);
 }

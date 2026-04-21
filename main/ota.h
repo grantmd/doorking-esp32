@@ -35,6 +35,23 @@ esp_err_t ota_check_now(void);
 // Returns ESP_ERR_INVALID_STATE if an OTA is already in progress.
 esp_err_t ota_pull_now(void);
 
+// Current OTA state — surfaced via GET /update/status so the dashboard
+// can show progress and errors without the user having to tail logs.
+typedef enum {
+    OTA_STATE_IDLE = 0,
+    OTA_STATE_CHECKING,
+    OTA_STATE_DOWNLOADING,
+    OTA_STATE_FAILED,     // last operation failed; last_error is populated
+} ota_state_t;
+
+ota_state_t  ota_get_state(void);
+const char  *ota_state_name(ota_state_t s);
+
+// Human-readable error message from the most recent failure, or empty
+// string if state is not FAILED. Points to a static buffer that is
+// overwritten by the next operation.
+const char  *ota_get_last_error(void);
+
 #ifdef __cplusplus
 }
 #endif

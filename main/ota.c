@@ -36,6 +36,52 @@ const char *ota_get_available_version(void)
 }
 
 // ---------------------------------------------------------------------------
+// Operation state — surfaced via GET /update/status so the UI can show
+// progress and errors without the user tailing logs.
+// ---------------------------------------------------------------------------
+
+static volatile ota_state_t s_state = OTA_STATE_IDLE;
+static char s_last_error[96];
+
+ota_state_t ota_get_state(void)
+{
+    return s_state;
+}
+
+const char *ota_state_name(ota_state_t s)
+{
+    switch (s) {
+    case OTA_STATE_IDLE:        return "idle";
+    case OTA_STATE_CHECKING:    return "checking";
+    case OTA_STATE_DOWNLOADING: return "downloading";
+    case OTA_STATE_FAILED:      return "failed";
+    }
+    return "unknown";
+}
+
+const char *ota_get_last_error(void)
+{
+    return s_last_error;
+}
+
+// Enter a new non-failed state. Clears any previous error string so stale
+// failure messages don't leak into a subsequent check/download.
+static void ota_enter_state(ota_state_t s)
+{
+    s_state = s;
+    s_last_error[0] = '\0';
+}
+
+// Record a failure. Keeps the message short enough for a compact JSON
+// payload; longer context continues to go to ESP_LOGE at the call site.
+static void ota_fail(const char *msg)
+{
+    s_state = OTA_STATE_FAILED;
+    strncpy(s_last_error, msg, sizeof(s_last_error) - 1);
+    s_last_error[sizeof(s_last_error) - 1] = '\0';
+}
+
+// ---------------------------------------------------------------------------
 // Rollback confirmation
 // ---------------------------------------------------------------------------
 
@@ -105,9 +151,11 @@ static void delayed_reboot_task(void *arg)
 
 esp_err_t ota_push_from_http(httpd_req_t *req)
 {
+    ota_enter_state(OTA_STATE_DOWNLOADING);
 
     const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
     if (!next) {
+        ota_fail("no OTA partition");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, "{\"error\":\"no OTA partition\"}");
@@ -117,6 +165,7 @@ esp_err_t ota_push_from_http(httpd_req_t *req)
     esp_err_t err = esp_ota_begin(next, OTA_WITH_SEQUENTIAL_WRITES, &handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        ota_fail("ota_begin failed");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, "{\"error\":\"ota_begin failed\"}");
@@ -137,6 +186,7 @@ esp_err_t ota_push_from_http(httpd_req_t *req)
             ESP_LOGE(TAG, "recv error during OTA push");
             esp_ota_abort(handle);
             status_led_set_state(STATUS_LED_WIFI_CONNECTED);
+            ota_fail("recv failed during upload");
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_set_type(req, "application/json");
             return httpd_resp_sendstr(req, "{\"error\":\"recv failed\"}");
@@ -147,6 +197,7 @@ esp_err_t ota_push_from_http(httpd_req_t *req)
             ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
             esp_ota_abort(handle);
             status_led_set_state(STATUS_LED_WIFI_CONNECTED);
+            ota_fail("ota_write failed");
             httpd_resp_set_status(req, "400 Bad Request");
             httpd_resp_set_type(req, "application/json");
             return httpd_resp_sendstr(req, "{\"error\":\"ota_write failed\"}");
@@ -160,6 +211,7 @@ esp_err_t ota_push_from_http(httpd_req_t *req)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_end failed: %s (image invalid?)", esp_err_to_name(err));
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
+        ota_fail("image validation failed");
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, "{\"error\":\"image validation failed\"}");
@@ -169,6 +221,7 @@ esp_err_t ota_push_from_http(httpd_req_t *req)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "set_boot_partition failed: %s", esp_err_to_name(err));
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
+        ota_fail("set_boot_partition failed");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, "{\"error\":\"set_boot_partition failed\"}");
@@ -176,6 +229,8 @@ esp_err_t ota_push_from_http(httpd_req_t *req)
 
     ESP_LOGI(TAG, "OTA push complete (%d bytes), rebooting in 1 s", total);
 
+    // State stays at DOWNLOADING through the reboot — the dashboard JS
+    // treats connection-lost-while-not-FAILED as a successful reboot.
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"result\":\"ok\",\"rebooting\":true}");
 
@@ -301,6 +356,7 @@ static bool find_asset_url(const char *json, char *url, size_t url_size)
 static esp_err_t download_and_flash(const char *url)
 {
     ESP_LOGI(TAG, "downloading OTA image from %s", url);
+    ota_enter_state(OTA_STATE_DOWNLOADING);
     status_led_set_state(STATUS_LED_OTA_IN_PROGRESS);
 
     // GitHub's browser_download_url redirects (302) to their CDN.
@@ -316,6 +372,7 @@ static esp_err_t download_and_flash(const char *url)
     esp_http_client_handle_t client = esp_http_client_init(&http_cfg);
     if (!client) {
         ESP_LOGE(TAG, "http_client_init failed");
+        ota_fail("http client init failed");
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
         return ESP_FAIL;
     }
@@ -328,6 +385,7 @@ static esp_err_t download_and_flash(const char *url)
         err = esp_http_client_open(client, 0);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "http open failed: %s", esp_err_to_name(err));
+            ota_fail("http connect failed");
             esp_http_client_cleanup(client);
             status_led_set_state(STATUS_LED_WIFI_CONNECTED);
             return err;
@@ -348,6 +406,7 @@ static esp_err_t download_and_flash(const char *url)
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "redirect %d but set_redirection failed: %s",
                          status, esp_err_to_name(err));
+                ota_fail("redirect failed");
                 esp_http_client_cleanup(client);
                 status_led_set_state(STATUS_LED_WIFI_CONNECTED);
                 return ESP_FAIL;
@@ -359,6 +418,9 @@ static esp_err_t download_and_flash(const char *url)
         }
 
         ESP_LOGE(TAG, "unexpected HTTP status %d", status);
+        char msg[48];
+        snprintf(msg, sizeof(msg), "unexpected HTTP %d", status);
+        ota_fail(msg);
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
@@ -371,6 +433,7 @@ static esp_err_t download_and_flash(const char *url)
     const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
     if (!next) {
         ESP_LOGE(TAG, "no OTA partition available");
+        ota_fail("no OTA partition");
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
@@ -381,6 +444,7 @@ static esp_err_t download_and_flash(const char *url)
     err = esp_ota_begin(next, OTA_WITH_SEQUENTIAL_WRITES, &ota_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        ota_fail("ota_begin failed");
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
@@ -390,6 +454,7 @@ static esp_err_t download_and_flash(const char *url)
     char *buf = malloc(OTA_BUF_SIZE);
     if (!buf) {
         ESP_LOGE(TAG, "malloc failed for OTA buffer");
+        ota_fail("malloc failed");
         esp_ota_abort(ota_handle);
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
@@ -397,11 +462,13 @@ static esp_err_t download_and_flash(const char *url)
         return ESP_ERR_NO_MEM;
     }
 
+    const char *read_err = NULL;
     int total = 0;
     while (1) {
         int read_len = esp_http_client_read(client, buf, OTA_BUF_SIZE);
         if (read_len < 0) {
             ESP_LOGE(TAG, "http read error");
+            read_err = "http read error (CDN connection)";
             err = ESP_FAIL;
             break;
         }
@@ -411,6 +478,7 @@ static esp_err_t download_and_flash(const char *url)
                 err = ESP_OK;
             } else {
                 ESP_LOGE(TAG, "connection closed before all data received");
+                read_err = "connection closed early";
                 err = ESP_FAIL;
             }
             break;
@@ -419,6 +487,7 @@ static esp_err_t download_and_flash(const char *url)
         err = esp_ota_write(ota_handle, buf, read_len);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
+            read_err = "ota_write failed";
             break;
         }
         total += read_len;
@@ -429,6 +498,7 @@ static esp_err_t download_and_flash(const char *url)
     esp_http_client_cleanup(client);
 
     if (err != ESP_OK) {
+        ota_fail(read_err ? read_err : "download failed");
         esp_ota_abort(ota_handle);
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
         return err;
@@ -437,6 +507,7 @@ static esp_err_t download_and_flash(const char *url)
     err = esp_ota_end(ota_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_end failed: %s (image invalid?)", esp_err_to_name(err));
+        ota_fail("image validation failed");
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
         return err;
     }
@@ -444,11 +515,14 @@ static esp_err_t download_and_flash(const char *url)
     err = esp_ota_set_boot_partition(next);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "set_boot_partition failed: %s", esp_err_to_name(err));
+        ota_fail("set_boot_partition failed");
         status_led_set_state(STATUS_LED_WIFI_CONNECTED);
         return err;
     }
 
     ESP_LOGI(TAG, "pull OTA complete (%d bytes), rebooting in 1 s", total);
+    // State stays at DOWNLOADING through reboot — the dashboard treats
+    // connection-lost-while-not-FAILED as a successful reboot.
     vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();
 
@@ -461,6 +535,7 @@ static void ota_check_task(void *arg)
     bool install = (bool)(uintptr_t)arg;
 
     ESP_LOGI(TAG, "checking GitHub for updates...");
+    ota_enter_state(OTA_STATE_CHECKING);
 
     esp_http_client_config_t cfg = {
         .url = GITHUB_API_URL,
@@ -472,6 +547,7 @@ static void ota_check_task(void *arg)
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) {
         ESP_LOGE(TAG, "http_client_init failed for check");
+        ota_fail("http client init failed");
         s_ota_in_progress = false;
         vTaskDelete(NULL);
         return;
@@ -484,6 +560,7 @@ static void ota_check_task(void *arg)
     esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "http open failed: %s", esp_err_to_name(err));
+        ota_fail("github.com connect failed");
         esp_http_client_cleanup(client);
         s_ota_in_progress = false;
         vTaskDelete(NULL);
@@ -495,6 +572,9 @@ static void ota_check_task(void *arg)
 
     if (status != 200) {
         ESP_LOGW(TAG, "GitHub API returned %d", status);
+        char msg[48];
+        snprintf(msg, sizeof(msg), "GitHub API returned HTTP %d", status);
+        ota_fail(msg);
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         s_ota_in_progress = false;
@@ -510,6 +590,7 @@ static void ota_check_task(void *arg)
     char *json = malloc(json_buf_size);
     if (!json) {
         ESP_LOGE(TAG, "malloc failed for JSON (%d bytes)", json_buf_size);
+        ota_fail("malloc failed for JSON buffer");
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         s_ota_in_progress = false;
@@ -535,6 +616,7 @@ static void ota_check_task(void *arg)
 
     if (!json_extract_string(json, "tag_name", tag, sizeof(tag))) {
         ESP_LOGW(TAG, "could not find tag_name in release JSON");
+        ota_fail("GitHub response missing tag_name");
         free(json);
         s_ota_in_progress = false;
         vTaskDelete(NULL);
@@ -548,6 +630,7 @@ static void ota_check_task(void *arg)
         ESP_LOGI(TAG, "already up to date");
         s_available_version[0] = '\0';
         free(json);
+        ota_enter_state(OTA_STATE_IDLE);
         s_ota_in_progress = false;
         vTaskDelete(NULL);
         return;
@@ -556,6 +639,9 @@ static void ota_check_task(void *arg)
     if (!find_asset_url(json, url, sizeof(url))) {
         ESP_LOGW(TAG, "no asset matching doorking-%s.bin in release %s",
                  CONFIG_IDF_TARGET, tag);
+        char msg[64];
+        snprintf(msg, sizeof(msg), "no binary for target %s", CONFIG_IDF_TARGET);
+        ota_fail(msg);
         free(json);
         s_ota_in_progress = false;
         vTaskDelete(NULL);
@@ -577,8 +663,13 @@ static void ota_check_task(void *arg)
 
     if (install) {
         download_and_flash(s_asset_url);
-        // download_and_flash reboots on success; if we get here it failed.
+        // download_and_flash reboots on success; if we get here it failed
+        // and already called ota_fail with a specific message.
         ESP_LOGE(TAG, "pull OTA install failed");
+    } else {
+        // Check-only: done successfully, return to idle. The available
+        // version is cached in s_available_version for the dashboard.
+        ota_enter_state(OTA_STATE_IDLE);
     }
 
     s_ota_in_progress = false;
