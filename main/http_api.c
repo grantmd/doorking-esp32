@@ -395,6 +395,16 @@ static esp_err_t handle_dashboard(httpd_req_t *req)
 }
 
 // ---------------------------------------------------------------------------
+// GET /favicon.ico — silent 204, suppresses the 404-per-pageview log spam
+// ---------------------------------------------------------------------------
+
+static esp_err_t handle_favicon(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "204 No Content");
+    return httpd_resp_send(req, NULL, 0);
+}
+
+// ---------------------------------------------------------------------------
 // POST /update — push OTA firmware upload
 // ---------------------------------------------------------------------------
 
@@ -696,7 +706,7 @@ void http_api_start(const doorking_config_t *cfg,
     httpd_config_t http_cfg = HTTPD_DEFAULT_CONFIG();
     http_cfg.server_port = 80;
     http_cfg.stack_size  = 10240;  // bumped from 8192 for OTA write path
-    http_cfg.max_uri_handlers = 15;
+    http_cfg.max_uri_handlers = 16;
 
     esp_err_t err = httpd_start(&s_httpd, &http_cfg);
     if (err != ESP_OK) {
@@ -710,6 +720,13 @@ void http_api_start(const doorking_config_t *cfg,
         .handler = handle_dashboard,
     };
     httpd_register_uri_handler(s_httpd, &dashboard);
+
+    const httpd_uri_t favicon = {
+        .uri     = "/favicon.ico",
+        .method  = HTTP_GET,
+        .handler = handle_favicon,
+    };
+    httpd_register_uri_handler(s_httpd, &favicon);
 
     const httpd_uri_t health = {
         .uri     = "/health",
