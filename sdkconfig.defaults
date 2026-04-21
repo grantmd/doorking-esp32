@@ -51,12 +51,14 @@ CONFIG_HTTPD_MAX_URI_LEN=1024
 # rolls back to the previous OTA slot on the next reboot.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
-# Shrink the mbedTLS TLS-record input buffer from the default 16 KB to
-# 4 KB. The only TLS traffic is the GitHub Releases API check (small
-# JSON) and the firmware binary download (streamed in chunks). 4 KB is
-# sufficient for both and frees ~12 KB of heap during TLS handshakes,
-# which prevents mDNS allocation failures on the ESP32 WROOM (320 KB
-# DRAM, tightest of the three targets).
+# mbedTLS content-length buffers. IN must stay at the 16 KB default because
+# GitHub's CDN (Fastly) sends TLS records larger than 4 KB during OTA binary
+# downloads — a smaller IN buffer causes MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE
+# (-0x7100) to fire mid-stream. OUT can stay small since we only send tiny
+# request headers; CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN lets IN and OUT
+# differ, so we still save ~12 KB of heap over the fully-symmetric default.
+# The mDNS-during-TLS-handshake log noise this previously tried to
+# eliminate is now suppressed via esp_log_level_set in main.c instead.
 CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN=y
-CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
