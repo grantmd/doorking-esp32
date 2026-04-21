@@ -62,7 +62,8 @@ so far — the third is waiting on shipping.
 | Rollback protection (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` + 120 s WiFi watchdog) | done |
 | Dashboard at `GET /` with version, update, check + reboot controls | done |
 | `POST /reboot` remote restart endpoint | done |
-| `POST /update/check` on-demand GitHub release check | done |
+| `POST /update/check` on-demand GitHub release check (unauthenticated) | done |
+| `GET /update/status` OTA progress + error surfacing so the dashboard shows failures live | done |
 | `esp32c3` build-verified and hardware-verified (XIAO) | done |
 | `esp32` build-verified and hardware-verified (Thing Plus WROOM, both relays) | done |
 | `esp32c5` build-verified, partially hardware-verified (WiFi + provisioning OK; Qwiic I²C needs LP\_I²C driver — deferred) | in progress |
@@ -327,8 +328,15 @@ an `esp32c3` binary onto an `esp32` board) and reboots on success.
 
 Visit `http://doorking.local/` for a lightweight status page showing the
 current firmware version, target chip, and available update. The page
-also has **Check for updates** and **Reboot** buttons (both require the
-bearer token).
+also has **Check for updates**, **Update firmware**, and **Reboot**
+buttons. Update and Reboot require the bearer token; Check for updates
+is unauthenticated (the version info it resolves is already public on
+`GET /` and `GET /health`).
+
+While an update is in progress the page polls `GET /update/status`
+every 2 seconds and surfaces state transitions (`checking` →
+`downloading` → reboot, or `failed` with the error message) so you
+don't need to tail the serial log to know what's happening.
 
 ### Rollback
 
@@ -381,7 +389,7 @@ self-tapping screws for the standoffs.
 │   ├── config.{c,h}             # NVS-backed persistent settings
 │   ├── wifi.{c,h}               # STA + AP-provisioning + provisioning HTTP server
 │   ├── http_api.{c,h}           # REST API + dashboard (/ /health /logs /status /open /close
-│   │                            #   /update /update/check /update/pull /reboot
+│   │                            #   /update /update/check /update/pull /update/status /reboot
 │   │                            #   /i2c/scan /i2c/relay-address)
 │   ├── ota.{c,h}                # OTA: push upload, GitHub pull check, rollback confirmation
 │   ├── log_buffer.{c,h}         # 16 KB RAM ring buffer, tees ESP_LOGx to buffer + UART
